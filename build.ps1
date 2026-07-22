@@ -2,8 +2,8 @@
 # Prerequisites:
 #   pip install -r requirements.txt
 #   ffmpeg.exe and ffprobe.exe placed next to this script
-#     (download from https://www.gyan.dev/ffmpeg/builds/ -> "release essentials"
-#      or https://github.com/BtbN/FFmpeg-Builds/releases)
+#     Download from https://github.com/BtbN/FFmpeg-Builds/releases
+#     (ffmpeg-master-latest-win64-gpl.zip -> bin/ffmpeg.exe, bin/ffprobe.exe)
 #
 # Usage:
 #   .\build.ps1
