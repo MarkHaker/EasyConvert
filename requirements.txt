@@ -1,0 +1,11 @@
+# Runtime dependencies for EasyConvert
+# Install with:  pip install -r requirements.txt
+# NOTE: requires Python 3.13+ (audioop removed in 3.13+, audioop-lts restores it)
+
+pydub>=0.25.1
+audioop-lts>=0.2.1
+imageio-ffmpeg>=0.6.0
+tkinterdnd2>=0.6.2
+
+# Build (optional, only to recompile the EXE)
+pyinstaller>=6.0

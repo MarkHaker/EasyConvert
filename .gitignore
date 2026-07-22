@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+*.spec.orig
+
+# Bundled runtime binaries (too large for git; download via Releases)
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+
+# Output / runtime folders (auto-created by the app)
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
