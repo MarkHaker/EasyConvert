@@ -1,38 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for EasyConvert.
-# Portable: uses SPECPATH (the directory containing this .spec file),
-# so it works for anyone who clones the repo and places ffmpeg.exe / ffprobe.exe
-# next to the script.
-#
-# Build with:
-#   pyinstaller --noconfirm --windowed --onefile ogg_to_mp3.spec
-#
-# Requirements next to this file: ogg_to_mp3.py, ico.ico, ffmpeg.exe, ffprobe.exe
-
-import os
 from PyInstaller.utils.hooks import collect_all
 
-spec_dir = SPECPATH  # noqa: F821 (defined by PyInstaller)
-script = os.path.join(spec_dir, 'ogg_to_mp3.py')
-icon = os.path.join(spec_dir, 'ico.ico')
-
 datas = []
-binaries = [
-    (os.path.join(spec_dir, 'ffmpeg.exe'), '.'),
-    (os.path.join(spec_dir, 'ffprobe.exe'), '.'),
-]
+binaries = [('C:\\Users\\Mark\\AppData\\Local\\Temp\\opencode\\easyconvert_publish\\ffmpeg.exe', '.'), ('C:\\Users\\Mark\\AppData\\Local\\Temp\\opencode\\easyconvert_publish\\ffprobe.exe', '.')]
 hiddenimports = []
-
-for pkg in ('tkinterdnd2', 'imageio_ffmpeg', 'pydub'):
-    tmp = collect_all(pkg)
-    datas += tmp[0]
-    binaries += tmp[1]
-    hiddenimports += tmp[2]
+tmp_ret = collect_all('tkinterdnd2')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('imageio_ffmpeg')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pydub')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    [script],
-    pathex=[spec_dir],
+    ['C:\\Users\\Mark\\AppData\\Local\\Temp\\opencode\\easyconvert_publish\\ogg_to_mp3.py'],
+    pathex=[],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -64,5 +46,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=[icon],
+    icon=['C:\\Users\\Mark\\AppData\\Local\\Temp\\opencode\\easyconvert_publish\\ico.ico'],
 )

@@ -19,13 +19,21 @@ dist/
 *.spec.bak
 *.spec.orig
 
-# Bundled runtime binaries (too large for git; download via Releases)
+# Bundled runtime binaries (too large for git; download via build.ps1 / Releases)
 ffmpeg.exe
 ffprobe.exe
 ffplay.exe
+ffmpeg_bin/
+ffmpeg.zip
 
-# Output / runtime folders (auto-created by the app)
+# User runtime files (auto-created by the app)
+settings.json
+convert.log
 [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+
+# Test artifacts
+_test/
+ec_clean_test/
 
 # OS junk
 Thumbs.db
