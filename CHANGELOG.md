@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-07-23
+
+### Changed — Complete UI rewrite on PyQt6
+- The GUI is now built with **PyQt6 + QSS** (standard tkinter is retired).
+  Premium card-based neumorphism look: deep `#13131A` background, `#1C1C26`
+  cards with rounded corners (20px) and subtle borders, `#252533` inputs.
+- Strict palette per spec: neon-teal `#00F0FF` START, neon-red `#FF3366` STOP,
+  white primary text, `#8A8A9D` secondary text.
+- **Strict vector icons** drawn with `QPainter` (plus, folder, trash, refresh,
+  play, stop, check, cross, note, open-folder). No emojis anywhere.
+- **Header**: bold app title on the left; compact **RU/EN pill switch** (capsule
+  with the active side highlighted) + icon-only update button on the right.
+- **Two raised cards** side by side with 20px gap:
+  - Left: **File queue** — dotted dropzone (`#252533`, dashed `#8A8A9D` border,
+    rounded 12px) with hint text, plus a queue list with name/size/status/
+    per-file progress (mini progress bar drawn in each row).
+  - Right: **Converted MP3s** — clean list, double-click to open, thin dark
+    custom scrollbars.
+- **Bottom settings + action card**: three columns (AUDIO / CONTROL / PATHS)
+  with dark rounded comboboxes, a folder-picker, and four **Toggle Switches**
+  (no checkboxes) for keep-rate / keep-tags / normalize / recursive.
+- Large **START** button (neon teal, black bold text, hover lightens) and
+  outlined **STOP** button (`#252533` bg, `#FF3366` text + border).
+- **Status bar** with a colored dot indicator (green idle, pulsing yellow while
+  converting, red on error) + `#8A8A9D` status text + version label.
+- Thin flat overall progress bar at the very bottom.
+- Generous spacing everywhere (≥15–20px padding, ≥20px between blocks).
+
+### Added
+- Per-file mini progress bar rendered inside each queue row (custom item
+  delegate).
+- Pulsing status-dot animation while converting.
+
+### Notes
+- EXE size grew to ~225 MB because PyQt6 is bundled alongside ffmpeg/ffprobe.
+- The app no longer uses `app.setStyle("Fusion")` — it crashed the event loop
+  combined with the custom QSS on some Windows builds.
+
 ## [1.1.2] — 2026-07-22
 
 ### Changed — UI redesign

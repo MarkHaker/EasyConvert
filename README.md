@@ -26,20 +26,26 @@
 **EasyConvert** is a tiny, standalone Windows application that converts **any audio file into MP3**.
 Drag an audio file into the window (or drop it onto the `.exe`) — and it becomes an MP3. That's it.
 
-### ✨ Features (v1.1.2)
+### ✨ Features (v1.1.3)
 
-#### Modern minimalist UI
-- **Two-panel workspace** with raised cards: left = **FILE QUEUE**
-  (name, size, status, per-file progress, color-coded states), right =
-  **CONVERTED MP3s** (name, folder, size). Double-click a row to open the file.
-- **Header** with logo + title, a compact **RU/EN pill switch**, and an
-  icon-only "check for updates" button.
-- Compact **icon action buttons** per card: `+ files`, `+ folder`, `clear`, `open folder`.
-- Large prominent **START (teal ▶) / STOP (red ■)** action bar.
-- **Compact settings panel** grouped into AUDIO / CONTROL / PATHS, clean checkboxes row.
-- **Thin overall progress bar** + **status bar** with a colored state icon
-  (idle / processing / done / error) and a version label.
-- Dark Material/macOS-inspired theme; thin modern scrollbars; empty-state prompt.
+#### Premium PyQt6 UI (card-based neumorphism)
+- Built with **PyQt6 + QSS** (no standard tkinter). Deep `#13131A` background,
+  `#1C1C26` raised cards with 20px rounded corners and subtle borders.
+- Strict palette: neon-teal `#00F0FF` START, neon-red `#FF3366` STOP, white
+  text, `#8A8A9D` secondary.
+- **Strict vector icons** drawn with QPainter (plus, folder, trash, refresh,
+  play, stop, check, note). **No emojis.**
+- **Header**: bold title + compact **RU/EN pill switch** (capsule, active side
+  highlighted) + icon-only update button.
+- **Two raised cards** with 20px gap: left = **FILE QUEUE** with a dotted
+  dropzone + per-file mini progress bars in rows; right = **CONVERTED MP3s**
+  with thin dark custom scrollbars. Double-click to open.
+- **Bottom settings + action card**: AUDIO / CONTROL / PATHS columns with dark
+  rounded comboboxes, plus four **Toggle Switches** (no checkboxes).
+- Large **START** button (neon teal) and outlined **STOP** button.
+- **Status bar** with a colored dot (green idle, pulsing yellow while working,
+  red on error) + thin overall progress bar.
+- Generous spacing everywhere (≥15–20px padding, ≥20px between blocks).
 
 #### Conversion
 - 🎯 **Any format** — OGG, WAV, FLAC, AAC, M4A, WMA, MP3, AC3, OPUS, AIFF, and dozens more (everything `ffmpeg` understands). Video containers (MP4/MKV/WebM/...) are handled too — only the audio stream is extracted.
@@ -86,16 +92,16 @@ pip install -r requirements.txt
 # Place ffmpeg.exe and ffprobe.exe next to the script (see build.ps1 for download links)
 .\build.ps1            # or the PyInstaller command below
 pyinstaller --noconfirm --windowed --onefile --icon ico.ico --name ogg_to_mp3 `
-  --collect-all tkinterdnd2 --collect-all imageio_ffmpeg --collect-all pydub `
+  --collect-all PyQt6 --collect-all imageio_ffmpeg --collect-all pydub `
   --add-binary "ffmpeg.exe;." --add-binary "ffprobe.exe;." ogg_to_mp3.py
 ```
 The EXE appears in `dist\ogg_to_mp3.exe`.
 
 ### 🧱 How it works
-Built with **Python + Tkinter + tkinterdnd2**, driving a bundled **ffmpeg/ffprobe** directly via `subprocess` (no pydub at encode time). PyInstaller packs everything (including `ffmpeg.exe`/`ffprobe.exe`) into a single self-extracting EXE via `--onefile`.
+Built with **Python + PyQt6 (QSS)**, driving a bundled **ffmpeg/ffprobe** directly via `subprocess` (no pydub at encode time). PyInstaller packs everything (PyQt6, `ffmpeg.exe`/`ffprobe.exe`) into a single self-extracting EXE via `--onefile`.
 
 ### 🧩 Tech stack
-`Python 3.14` · `Tkinter` · `tkinterdnd2` · `ffmpeg/ffprobe` · `PyInstaller`
+`Python 3.14` · `PyQt6 + QSS` · `ffmpeg/ffprobe` · `PyInstaller`
 
 ---
 
@@ -105,20 +111,27 @@ Built with **Python + Tkinter + tkinterdnd2**, driving a bundled **ffmpeg/ffprob
 **EasyConvert** — крошечная самостоятельная программа для Windows, которая конвертирует **любое аудио в MP3**.
 Перетащи аудио-файл в окно (или на сам `.exe`) — и он станет MP3. И всё.
 
-### ✨ Возможности (v1.1.2)
+### ✨ Возможности (v1.1.3)
 
-#### Современный минималистичный UI
-- **Двухпанельное рабочее пространство** с карточками: слева **ОЧЕРЕДЬ ФАЙЛОВ**
-  (имя, размер, статус, прогресс по файлу, цветовые состояния), справа
-  **ГОТОВЫЕ MP3** (имя, папка, размер). Двойной клик открывает файл.
-- **Шапка** с логотипом и названием, компактный **RU/EN-переключатель** и
-  кнопка-иконка «проверить обновления».
-- Компактные **кнопки-иконки** в каждой карточке: `+ файлы`, `+ папка`, `очистить`, `открыть папку`.
-- Крупная заметная панель **СТАРТ (бирюзовый ▶) / СТОП (красный ■)**.
-- **Компактная панель настроек**, сгруппированная в АУДИО / УПРАВЛЕНИЕ / ПУТИ, чистая строка чекбоксов.
-- **Тонкая полоса общего прогресса** + **статус-бар** с цветной иконкой состояния
-  (ожидание / конвертация / готово / ошибка) и версией справа.
-- Тёмная тема в стиле Material/macOS; тонкие современные скроллбары; подсказка при пустой очереди.
+#### Премиальный UI на PyQt6 (карточки + неоморфизм)
+- Сделано на **PyQt6 + QSS** (стандартный tkinter больше не используется). Глубокий
+  фон `#13131A`, карточки `#1C1C26` со скруглением 20px и тонкой рамкой.
+- Строгая палитра: неоново-бирюзовый `#00F0FF` для СТАРТ, неоново-красный
+  `#FF3366` для СТОП, белый текст, `#8A8A9D` второстепенный.
+- **Строгие векторные иконки** через QPainter (плюс, папка, корзина, обновление,
+  play, stop, галочка, нота). **Без эмодзи.**
+- **Шапка**: жирный заголовок + компактный **RU/EN-pill-переключатель** (капсула,
+  активная сторона подсвечена) + кнопка-иконка обновления.
+- **Две карточки** с отступом 20px: слева **ОЧЕРЕДЬ ФАЙЛОВ** с пунктирной dropzone
+  и мини-полосами прогресса в строках; справа **ГОТОВЫЕ MP3** с тонкими тёмными
+  скроллбарами. Двойной клик открывает файл.
+- **Нижняя карточка настроек и действий**: колонки АУДИО / УПРАВЛЕНИЕ / ПУТИ с
+  тёмными скруглёнными выпадающими списками + четыре **Toggle-переключателя**
+  (без чекбоксов).
+- Крупная кнопка **СТАРТ** (бирюзовая) и кнопка **СТОП** с контуром.
+- **Статус-бар** с цветным кружком (зелёный — готово, пульсирующий жёлтый —
+  конвертация, красный — ошибка) + тонкая полоса общего прогресса внизу.
+- Везде большие отступы (≥15–20px padding, ≥20px между блоками).
 
 #### Конвертация
 - 🎯 **Любой формат** — OGG, WAV, FLAC, AAC, M4A, WMA, MP3, AC3, OPUS, AIFF и ещё десятки (всё, что понимает `ffmpeg`). Видеоконтейнеры (MP4/MKV/WebM/...) тоже поддерживаются — извлекается только аудиодорожка.
@@ -165,16 +178,16 @@ pip install -r requirements.txt
 # Положи ffmpeg.exe и ffprobe.exe рядом со скриптом (ссылки в build.ps1)
 .\build.ps1            # или команда PyInstaller ниже
 pyinstaller --noconfirm --windowed --onefile --icon ico.ico --name ogg_to_mp3 `
-  --collect-all tkinterdnd2 --collect-all imageio_ffmpeg --collect-all pydub `
+  --collect-all PyQt6 --collect-all imageio_ffmpeg --collect-all pydub `
   --add-binary "ffmpeg.exe;." --add-binary "ffprobe.exe;." ogg_to_mp3.py
 ```
 EXE появится в `dist\ogg_to_mp3.exe`.
 
 ### 🧱 Как это работает
-Сделано на **Python + Tkinter + tkinterdnd2**, поверх вшитого **ffmpeg/ffprobe**, вызываемого напрямую через `subprocess` (без pydub при кодировании). PyInstaller упаковывает всё (включая `ffmpeg.exe`/`ffprobe.exe`) в один самораспаковывающийся EXE через `--onefile`.
+Сделано на **Python + PyQt6 (QSS)**, поверх вшитого **ffmpeg/ffprobe**, вызываемого напрямую через `subprocess` (без pydub при кодировании). PyInstaller упаковывает всё (PyQt6, `ffmpeg.exe`/`ffprobe.exe`) в один самораспаковывающийся EXE через `--onefile`.
 
 ### 🧩 Технологии
-`Python 3.14` · `Tkinter` · `tkinterdnd2` · `ffmpeg/ffprobe` · `PyInstaller`
+`Python 3.14` · `PyQt6 + QSS` · `ffmpeg/ffprobe` · `PyInstaller`
 
 ---
 
