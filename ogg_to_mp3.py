@@ -1,58 +1,57 @@
 # -*- coding: utf-8 -*-
 """
-EasyConvert v1.1.2 — drag & drop any audio into MP3.
+EasyConvert v1.1.3 — drag & drop any audio into MP3.
 
-Modern minimalist two-panel UI:
-  * left  = input queue (file + size + status + per-file progress)
-  * right = output list (produced MP3s, open folder)
-
-Conversion core: direct ffmpeg-subprocess with real per-file progress,
-cancellation, metadata preservation. i18n RU/EN. settings.json, convert.log,
-update check via GitHub API.
+Premium card-based neumorphism UI built with PyQt6 + QSS.
+- Card surfaces with drop shadows, rounded corners (cards 20px, controls 12px).
+- Dotted dropzone, custom dark thin scrollbars, toggle switches (no checkboxes).
+- Strict vector icons drawn with QPainter (no emojis).
+- Direct ffmpeg-subprocess core: real per-file progress, cancel, metadata
+  preservation (-map_metadata 0:s:0), video container support (-vn).
+- i18n RU/EN with a pill switch. settings.json, convert.log, update check.
 """
 
 import os
 import sys
 import re
 import json
+import time
 import threading
 import subprocess
 import datetime
 import urllib.request
 import logging
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from pathlib import Path
 
-try:
-    import tkinterdnd2  # noqa: F401
-    _HAS_DND = True
-except Exception:
-    _HAS_DND = False
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QTimer, QRectF, QPoint, QPointF, QLineF
+from PyQt6.QtGui import (QGuiApplication, QAction, QColor, QPainter, QPen,
+                         QBrush, QPainterPath, QIcon, QPixmap, QFontDatabase)
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel,
+                             QPushButton, QVBoxLayout, QHBoxLayout, QGridLayout,
+                             QFrame, QScrollArea, QComboBox, QSpinBox, QTreeWidget,
+                             QTreeWidgetItem, QProgressBar, QSizePolicy, QStyle,
+                             QStyleOptionViewItem, QStyledItemDelegate)
+from PyQt6.QtWidgets import QGraphicsDropShadowEffect, QAbstractItemView
 
 APP_NAME = "EasyConvert"
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 REPO_SLUG = "MarkHaker/EasyConvert"
 
-# Palette — clean dark (Material / macOS-ish)
-C_BG = "#1e1e2e"          # window background (deep blue-grey)
-C_BG_RAISED = "#252537"   # cards / raised surfaces
-C_BG_INSET = "#181825"    # inputs / lists
-C_BORDER = "#313244"
-C_BORDER_SOFT = "#2a2a3c"
-C_TEXT = "#cdd6f4"
-C_TEXT_DIM = "#7f7fa0"
-C_TEXT_FAINT = "#5b5b8a"
-C_ACCENT = "#bb86fc"      # soft purple
-C_ACCENT_2 = "#03dac6"    # teal — Start
-C_DANGER = "#cf6679"      # red — Stop
-C_OK = "#a6e3a1"
-C_WARN = "#f9e2af"
-C_INFO = "#89b4fa"
+# --------------------------------------------------------------------------- #
+# Palette (strict, per spec)
+# --------------------------------------------------------------------------- #
+C_MAIN_BG = "#13131A"
+C_CARD = "#1C1C26"
+C_INPUT = "#252533"
+C_ACCENT = "#00F0FF"      # START neon teal
+C_DANGER = "#FF3366"      # STOP neon red
+C_TEXT = "#FFFFFF"
+C_TEXT_DIM = "#8A8A9D"
+C_BORDER = "#2E2E3A"
 
-FONT = "Segoe UI"
-FONT_MONO = "Cascadia Mono"
-
-# Audio extensions used to filter files when a folder is dropped.
+# --------------------------------------------------------------------------- #
+# Audio extensions
+# --------------------------------------------------------------------------- #
 AUDIO_EXTS = {
     ".ogg", ".oga", ".opus", ".spx", ".wav", ".mp3", ".mp2", ".mp1", ".flac",
     ".aac", ".m4a", ".m4b", ".m4p", ".m4r", ".wma", ".ac3", ".ec3", ".dts",
@@ -281,32 +280,32 @@ def default_lang():
 I18N = {
     "ru": {
         "title": "EasyConvert — Аудио в MP3",
-        "input_panel": "ОЧЕРЕДЬ ФАЙЛОВ",
-        "output_panel": "ГОТОВЫЕ MP3",
-        "drop_hint": "Перетащи файлы или папку сюда",
-        "drop_sub": "или нажми + ниже",
-        "add_files": "Добавить файлы",
-        "add_folder": "Добавить папку",
-        "clear": "Очистить",
-        "open_folder": "Открыть папку",
+        "queue": "Очередь файлов",
+        "done_mp3": "Готовые MP3",
+        "drop_hint": "Перетащите файлы сюда",
+        "drop_sub": "или нажмите + выше",
+        "add_file_tip": "Добавить файлы",
+        "add_folder_tip": "Добавить папку",
+        "clear_tip": "Очистить",
+        "open_folder_tip": "Открыть папку",
         "start": "СТАРТ",
         "stop": "СТОП",
-        "audio": "Аудио",
-        "manage": "Управление",
-        "paths": "Пути",
+        "audio": "АУДИО",
+        "control": "УПРАВЛЕНИЕ",
+        "paths": "ПУТИ",
         "bitrate": "Битрейт",
         "channels": "Каналы",
         "workers": "Потоков",
         "out_mode": "Папка вывода",
         "collision": "При совпадении",
-        "keep_native": "Сохранять исх. частоту/каналы",
-        "keep_tags": "Сохранять теги/метаданные",
-        "normalize": "Нормализация громкости (loudnorm)",
+        "keep_native": "Сохранять частоту исх.",
+        "keep_tags": "Сохранять теги",
+        "normalize": "Нормализация громкости",
         "recursive": "Рекурсивно по подпапкам",
         "check_update": "Проверить обновления",
         "status_ready": "Готов к работе. Папка: {}",
         "status_added": "Добавлено файлов: {}",
-        "status_empty_queue": "Очередь пуста — добавь файлы",
+        "status_empty_queue": "Очередь пуста — добавьте файлы",
         "status_processing": "Конвертация [{}/{}]: {}",
         "status_done": "Готово: {}/{} — ошибок: {}, пропущено: {}",
         "status_cancelled": "Остановлено пользователем",
@@ -323,7 +322,6 @@ I18N = {
         "st_done": "готово",
         "st_failed": "ошибка",
         "st_skipped": "пропуск",
-        "st_overwritten": "перезапись",
         "log_conv_start": "Начало конвертации: {} файл(ов)",
         "log_conv_ok": "[OK] {}/{}  {}  ->  {}",
         "log_conv_fail": "[FAIL] {}/{}  {}: {}",
@@ -332,38 +330,36 @@ I18N = {
         "err_decode": "ffmpeg не смог декодировать файл",
         "err_limited": "Формат требует звукового шрифта — не поддерживается",
         "err_unknown": "Ошибка",
-        "msg_pick_files": "Выбери аудио файлы",
-        "msg_pick_folder": "Выбери папку с аудио",
-        "msg_pick_output": "Выбери папку для вывода MP3",
+        "msg_pick_files": "Выберите аудио файлы",
+        "msg_pick_folder": "Выберите папку с аудио",
+        "msg_pick_output": "Выберите папку для вывода MP3",
         "all_files": "Все файлы",
         "audio_files": "Аудио файлы",
         "confirm_clear": "Очистить список?",
-        "about": "О программе",
-        "about_text": "EasyConvert v{}\nDrag & drop аудио в MP3.\n\nGitHub: https://github.com/{}".format(APP_VERSION, REPO_SLUG),
     },
     "en": {
         "title": "EasyConvert — Audio to MP3",
-        "input_panel": "FILE QUEUE",
-        "output_panel": "CONVERTED MP3s",
-        "drop_hint": "Drop files or a folder here",
-        "drop_sub": "or click + below",
-        "add_files": "Add files",
-        "add_folder": "Add folder",
-        "clear": "Clear",
-        "open_folder": "Open folder",
+        "queue": "File queue",
+        "done_mp3": "Converted MP3s",
+        "drop_hint": "Drop files here",
+        "drop_sub": "or click + above",
+        "add_file_tip": "Add files",
+        "add_folder_tip": "Add folder",
+        "clear_tip": "Clear",
+        "open_folder_tip": "Open folder",
         "start": "START",
         "stop": "STOP",
-        "audio": "Audio",
-        "manage": "Control",
-        "paths": "Paths",
+        "audio": "AUDIO",
+        "control": "CONTROL",
+        "paths": "PATHS",
         "bitrate": "Bitrate",
         "channels": "Channels",
         "workers": "Workers",
         "out_mode": "Output folder",
         "collision": "On clash",
-        "keep_native": "Keep orig. freq/chan.",
-        "keep_tags": "Keep tags/metadata",
-        "normalize": "Loudness normalization (loudnorm)",
+        "keep_native": "Keep source rate",
+        "keep_tags": "Keep tags",
+        "normalize": "Loudness normalization",
         "recursive": "Recursive subfolders",
         "check_update": "Check for updates",
         "status_ready": "Ready. Output: {}",
@@ -385,7 +381,6 @@ I18N = {
         "st_done": "done",
         "st_failed": "failed",
         "st_skipped": "skipped",
-        "st_overwritten": "overwritten",
         "log_conv_start": "Conversion started: {} file(s)",
         "log_conv_ok": "[OK] {}/{}  {}  ->  {}",
         "log_conv_fail": "[FAIL] {}/{}  {}: {}",
@@ -400,8 +395,6 @@ I18N = {
         "all_files": "All files",
         "audio_files": "Audio files",
         "confirm_clear": "Clear the list?",
-        "about": "About",
-        "about_text": "EasyConvert v{}\nDrag & drop audio to MP3.\n\nGitHub: https://github.com/{}".format(APP_VERSION, REPO_SLUG),
     },
 }
 
@@ -415,7 +408,7 @@ def tr(lang, key, *args):
 
 
 # --------------------------------------------------------------------------- #
-# ffprobe + conversion core
+# Conversion core (ffmpeg subprocess)
 # --------------------------------------------------------------------------- #
 _CREATEFLAGS = 0
 if sys.platform == "win32":
@@ -547,543 +540,932 @@ class Converter:
 
 
 # --------------------------------------------------------------------------- #
-# Custom widgets
+# Worker thread (Qt)
 # --------------------------------------------------------------------------- #
-class FlatButton(tk.Frame):
-    """A flat, rounded-feeling button (frame + label)."""
+class ConvertWorker(QThread):
+    progress = pyqtSignal(int, int, int, str)   # index, total, pct, name
+    item_status = pyqtSignal(int, str, str)     # index, status, name
+    output_ready = pyqtSignal(str)              # output path
+    finished_run = pyqtSignal(int, int, int, int)  # ok, fail, skip, total
+    log_line = pyqtSignal(str)
+    cancelled = pyqtSignal()
 
-    def __init__(self, parent, text, command, bg=C_BG_RAISED, fg=C_TEXT,
-                 accent=None, font_size=10, bold=False, padx=14, pady=8,
-                 icon=None, width=None):
-        super().__init__(parent, bg=bg)
-        self._bg = bg
-        self._bg_hover = self._lighten(bg)
-        self._fg = fg
-        fnt = (FONT, font_size, "bold" if bold else "normal")
-        label_text = (icon + "  " + text) if icon else text
-        self.lbl = tk.Label(self, text=label_text, fg=fg, bg=bg, font=fnt,
-                           cursor="hand2")
-        self.lbl.pack(fill="both", expand=True, padx=padx, pady=pady)
-        if width:
-            self.config(width=width)
-            self.lbl.config(width=width)
-        self._cmd = command
-        for w in (self, self.lbl):
-            w.bind("<Button-1>", self._on_click)
-            w.bind("<Enter>", self._on_enter)
-            w.bind("<Leave>", self._on_leave)
+    def __init__(self, files, settings, lang):
+        super().__init__()
+        self.files = files
+        self.settings = settings
+        self.lang = lang
+        self.converter = Converter(settings, lang, on_progress=self._on_progress)
+        self._stop = False
 
-    def _on_click(self, e):
-        if self._cmd:
-            self._cmd()
+    def _on_progress(self, index, total, pct, name):
+        self.progress.emit(index, total, pct, name)
 
-    def _on_enter(self, e):
-        self.config(bg=self._bg_hover)
-        self.lbl.config(bg=self._bg_hover)
+    def cancel(self):
+        self._stop = True
+        self.converter.cancel()
 
-    def _on_leave(self, e):
-        self.config(bg=self._bg)
-        self.lbl.config(bg=self._bg)
-
-    def _lighten(self, hexcolor):
-        try:
-            r = int(hexcolor[1:3], 16); g = int(hexcolor[3:5], 16); b = int(hexcolor[5:7], 16)
-            r = min(255, r + 18); g = min(255, g + 18); b = min(255, b + 18)
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except Exception:
-            return hexcolor
-
-    def set_text(self, text, icon=None):
-        label_text = (icon + "  " + text) if icon else text
-        self.lbl.config(text=label_text)
-
-    def set_state(self, enabled):
-        st = "normal" if enabled else "disabled"
-        self.lbl.config(state=st)
-
-
-class IconLabelButton(tk.Frame):
-    """Compact square icon button (e.g. + file, + folder, trash)."""
-
-    def __init__(self, parent, icon, command, bg=C_BG_RAISED, fg=C_TEXT,
-                 size=36, tooltip=None):
-        super().__init__(parent, bg=bg, width=size, height=size)
-        self._bg = bg
-        self._bg_hover = self._lighten(bg)
-        self._cmd = command
-        self.lbl = tk.Label(self, text=icon, fg=fg, bg=bg,
-                            font=(FONT, 13), cursor="hand2")
-        self.lbl.place(relx=0.5, rely=0.5, anchor="center")
-        for w in (self, self.lbl):
-            w.bind("<Button-1>", self._on_click)
-            w.bind("<Enter>", self._on_enter)
-            w.bind("<Leave>", self._on_leave)
-
-    def _on_click(self, e):
-        if self._cmd:
-            self._cmd()
-
-    def _on_enter(self, e):
-        self.config(bg=self._bg_hover); self.lbl.config(bg=self._bg_hover)
-
-    def _on_leave(self, e):
-        self.config(bg=self._bg); self.lbl.config(bg=self._bg)
-
-    def _lighten(self, hexcolor):
-        try:
-            r = int(hexcolor[1:3], 16); g = int(hexcolor[3:5], 16); b = int(hexcolor[5:7], 16)
-            r = min(255, r + 18); g = min(255, g + 18); b = min(255, b + 18)
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except Exception:
-            return hexcolor
-
-    def set_state(self, enabled):
-        st = "normal" if enabled else "disabled"
-        self.lbl.config(state=st)
+    def run(self):
+        total = len(self.files)
+        log.info(tr(self.lang, "log_conv_start", total))
+        self.log_line.emit(tr(self.lang, "log_conv_start", total))
+        ok = fail = skip = 0
+        for i, f in enumerate(self.files, start=1):
+            if self._stop:
+                break
+            self.item_status.emit(i, "processing", f)
+            status, msg, out_path = self.converter.convert_file(f, i, total)
+            if status == "done":
+                ok += 1
+                if out_path:
+                    self.output_ready.emit(out_path)
+            elif status == "skipped":
+                skip += 1
+                if out_path:
+                    self.output_ready.emit(out_path)
+            elif status == "cancelled":
+                self.cancelled.emit()
+                break
+            else:
+                fail += 1
+            self.item_status.emit(i, status, f)
+            self.log_line.emit(msg)
+            log.info(msg)
+        self.finished_run.emit(ok, fail, skip, total)
 
 
-class LangSwitch(tk.Frame):
-    """Compact EN/RU pill switch."""
+# --------------------------------------------------------------------------- #
+# Icon renderer — strict vector icons, no emojis
+# --------------------------------------------------------------------------- #
+def make_icon_pixmap(draw_func, size=20, color=C_TEXT_DIM, device_pixel_ratio=1.0):
+    """Render an icon via a QPainter draw_func onto a transparent pixmap."""
+    px = QPixmap(int(size * device_pixel_ratio), int(size * device_pixel_ratio))
+    px.setDevicePixelRatio(device_pixel_ratio)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    col = QColor(color)
+    p.setPen(QPen(col, 1.6))
+    p.setBrush(QBrush(col))
+    draw_func(p, size)
+    p.end()
+    return px
 
-    def __init__(self, parent, lang, on_change):
-        super().__init__(parent, bg=C_BG_RAISED)
-        self._on_change = on_change
+
+def icon_plus(p, s):
+    m = s * 0.22
+    p.setPen(QPen(p.pen().color(), 2.0))
+    p.drawLine(QLineF(QPointF(m, s / 2), QPointF(s - m, s / 2)))
+    p.drawLine(QLineF(QPointF(s / 2, m), QPointF(s / 2, s - m)))
+
+
+def icon_folder(p, s):
+    col = p.pen().color()
+    p.setPen(QPen(col, 1.8))
+    p.setBrush(QBrush(col))
+    path = QPainterPath()
+    m = 0.18
+    path.moveTo(s * m, s * (0.30))
+    path.lineTo(s * 0.42, s * 0.30)
+    path.lineTo(s * 0.52, s * 0.40)
+    path.lineTo(s * (1 - m), s * 0.40)
+    path.lineTo(s * (1 - m), s * (1 - m))
+    path.lineTo(s * m, s * (1 - m))
+    path.closeSubpath()
+    p.drawPath(path)
+
+
+def icon_trash(p, s):
+    col = p.pen().color()
+    p.setPen(QPen(col, 1.8))
+    p.setBrush(QBrush(Qt.GlobalColor.transparent))
+    m = 0.22
+    # lid
+    p.drawLine(QLineF(QPointF(s * m, s * 0.32), QPointF(s * (1 - m), s * 0.32)))
+    # handle
+    p.drawLine(QLineF(QPointF(s * 0.40, s * 0.32), QPointF(s * 0.40, s * 0.24)))
+    p.drawLine(QLineF(QPointF(s * 0.60, s * 0.24), QPointF(s * 0.60, s * 0.32)))
+    # body
+    p.setBrush(QBrush(Qt.GlobalColor.transparent))
+    p.drawRoundedRect(QRectF(s * m, s * 0.32, s * (1 - 2 * m), s * (0.68 - 0.32)),
+                      2, 2)
+    # lines
+    p.drawLine(QLineF(QPointF(s * 0.45, s * 0.42), QPointF(s * 0.45, s * 0.60)))
+    p.drawLine(QLineF(QPointF(s * 0.55, s * 0.42), QPointF(s * 0.55, s * 0.60)))
+
+
+def icon_refresh(p, s):
+    col = p.pen().color()
+    p.setPen(QPen(col, 1.8))
+    p.setBrush(QBrush(col))
+    p.translate(s / 2, s / 2)
+    r = s * 0.34
+    # Draw ~300deg arc using addArc (start 20deg, span 300deg)
+    path = QPainterPath()
+    path.arcMoveTo(QRectF(-r, -r, 2 * r, 2 * r), 20)
+    path.arcTo(QRectF(-r, -r, 2 * r, 2 * r), 20, 300)
+    p.drawPath(path)
+    # arrowhead at the end of the arc
+    p.setBrush(QBrush(col))
+    tri = QPainterPath()
+    tri.moveTo(r * 0.6, -r * 0.2)
+    tri.lineTo(r * 1.15, r * 0.1)
+    tri.lineTo(r * 0.6, r * 0.5)
+    tri.closeSubpath()
+    p.drawPath(tri)
+
+
+def icon_play(p, s):
+    col = p.pen().color()
+    p.setBrush(QBrush(col))
+    p.setPen(Qt.PenStyle.NoPen)
+    tri = QPainterPath()
+    m = 0.28
+    tri.moveTo(s * (m + 0.04), s * m)
+    tri.lineTo(s * (1 - m), s / 2)
+    tri.lineTo(s * (m + 0.04), s * (1 - m))
+    tri.closeSubpath()
+    p.drawPath(tri)
+
+
+def icon_stop(p, s):
+    col = p.pen().color()
+    p.setBrush(QBrush(col))
+    p.setPen(Qt.PenStyle.NoPen)
+    m = 0.26
+    p.drawRoundedRect(QRectF(s * m, s * m, s * (1 - 2 * m), s * (1 - 2 * m)),
+                      2, 2)
+
+
+def icon_check(p, s):
+    col = p.pen().color()
+    p.setPen(QPen(col, 2.2))
+    p.setBrush(QBrush(Qt.GlobalColor.transparent))
+    path = QPainterPath()
+    m = 0.24
+    path.moveTo(s * m, s * 0.54)
+    path.lineTo(s * 0.42, s * (1 - m))
+    path.lineTo(s * (1 - m), s * m)
+    p.drawPath(path)
+
+
+def icon_cross(p, s):
+    col = p.pen().color()
+    p.setPen(QPen(col, 2.0))
+    m = 0.26
+    p.drawLine(s * m, s * m, s * (1 - m), s * (1 - m))
+    p.drawLine(s * (1 - m), s * m, s * m, s * (1 - m))
+
+
+def icon_note(p, s):
+    col = p.pen().color()
+    p.setPen(QPen(col, 1.6))
+    p.setBrush(QBrush(col))
+    path = QPainterPath()
+    m = 0.26
+    path.moveTo(s * (1 - m), s * m)
+    path.lineTo(s * (1 - m), s * (0.70))
+    path.cubicTo(s * (1 - m), s * 0.85, s * m, s * 0.92, s * m, s * 0.78)
+    path.lineTo(s * m, s * 0.30)
+    p.drawPath(path)
+    p.setBrush(QBrush(col))
+    p.drawEllipse(QRectF(s * m * 0.6, s * 0.70, s * 0.20, s * 0.20))
+
+
+def icon_open_folder(p, s):
+    icon_folder(p, s)
+    col = p.pen().color()
+    p.setPen(QPen(col, 1.6))
+    # lines
+    p.drawLine(QLineF(QPointF(s * 0.30, s * 0.62), QPointF(s * 0.70, s * 0.50)))
+
+
+def get_icon(name, size=20, color=C_TEXT_DIM, dpr=1.0):
+    funcs = {
+        "plus": icon_plus, "folder": icon_folder, "trash": icon_trash,
+        "refresh": icon_refresh, "play": icon_play, "stop": icon_stop,
+        "check": icon_check, "cross": icon_cross, "note": icon_note,
+        "open_folder": icon_open_folder,
+    }
+    f = funcs.get(name)
+    if not f:
+        return QPixmap()
+    return make_icon_pixmap(f, size=size, color=color, device_pixel_ratio=dpr)
+
+
+class IconButton(QPushButton):
+    """Square flat icon button with rounded corners."""
+
+    def __init__(self, icon_name, tip, size=34, icon_color=C_TEXT_DIM, on_click=None):
+        super().__init__()
+        self._icon_name = icon_name
+        self._icon_color = icon_color
+        self._size = size
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(tip)
+        self.setObjectName("iconBtn")
+        self._on_click = on_click
+        self._render_icon()
+        self.clicked.connect(lambda: self._on_click and self._on_click())
+
+    def _render_icon(self):
+        dpr = self.devicePixelRatioF() or 1.0
+        px = get_icon(self._icon_name, size=self._size * 0.5,
+                      color=self._icon_color, dpr=dpr)
+        self.setIcon(QIcon(px))
+        self.setIconSize(QSize(int(self._size * 0.5), int(self._size * 0.5)))
+
+    def set_icon_color(self, color):
+        self._icon_color = color
+        self._render_icon()
+
+
+# --------------------------------------------------------------------------- #
+# Toggle switch (no checkboxes)
+# --------------------------------------------------------------------------- #
+class ToggleSwitch(QWidget):
+    def __init__(self, label_text, initial=False, on_toggle=None):
+        super().__init__()
+        self.setObjectName("toggleRow")
+        self._state = initial
+        self._on_toggle = on_toggle
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 6, 0, 6)
+        lay.setSpacing(12)
+        self.label = QLabel(label_text)
+        self.label.setObjectName("toggleLabel")
+        self.label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._knob = _SwitchKnob(initial=self._state, toggled=self._toggle)
+        lay.addWidget(self.label)
+        lay.addStretch(1)
+        lay.addWidget(self._knob)
+        self.label.mousePressEvent = lambda e: self._toggle(not self._state)
+
+    def _toggle(self, val):
+        new = not self._state
+        self._state = new
+        self._knob.set_state(new)
+        if self._on_toggle:
+            self._on_toggle(new)
+
+    def set_state(self, val):
+        self._state = bool(val)
+        self._knob.set_state(self._state)
+
+    def state(self):
+        return self._state
+
+    def set_text(self, text):
+        self.label.setText(text)
+
+
+class _SwitchKnob(QWidget):
+    SIZE_W = 44
+    SIZE_H = 24
+
+    def __init__(self, initial=False, toggled=None):
+        super().__init__()
+        self._state = initial
+        self._toggled = toggled
+        self.setFixedSize(self.SIZE_W, self.SIZE_H)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_state(self, val):
+        self._state = bool(val)
+        self.update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._state = not self._state
+            self.update()
+            if self._toggled:
+                self._toggled(self._state)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        r = self.SIZE_H / 2
+        track = QColor(C_ACCENT) if self._state else QColor("#3A3A4A")
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(track))
+        p.drawRoundedRect(QRectF(0, 0, self.SIZE_W, self.SIZE_H), r, r)
+        # knob
+        kx = (self.SIZE_W - self.SIZE_H + 2) if self._state else 2
+        p.setBrush(QBrush(QColor("#FFFFFF")))
+        p.drawEllipse(QRectF(kx, 2, self.SIZE_H - 4, self.SIZE_H - 4))
+        p.end()
+
+
+# --------------------------------------------------------------------------- #
+# Language pill switch
+# --------------------------------------------------------------------------- #
+class LangSwitch(QWidget):
+    def __init__(self, lang, on_change):
+        super().__init__()
         self._lang = lang
-        self.btn_ru = tk.Label(self, text="RU", bg=(C_ACCENT if lang == "ru" else C_BG_RAISED),
-                               fg=(C_BG if lang == "ru" else C_TEXT_DIM),
-                               font=(FONT, 9, "bold"), cursor="hand2", width=3)
-        self.btn_en = tk.Label(self, text="EN", bg=(C_ACCENT if lang == "en" else C_BG_RAISED),
-                               fg=(C_BG if lang == "en" else C_TEXT_DIM),
-                               font=(FONT, 9, "bold"), cursor="hand2", width=3)
-        self.btn_ru.pack(side="left", padx=2, pady=2)
-        self.btn_en.pack(side="left", padx=2, pady=2)
-        self.btn_ru.bind("<Button-1>", lambda e: self._set("ru"))
-        self.btn_en.bind("<Button-1>", lambda e: self._set("en"))
+        self._on_change = on_change
+        self.setFixedSize(76, 30)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def _set(self, lng):
-        if lng == self._lang:
-            return
-        self._lang = lng
-        self.btn_ru.config(bg=(C_ACCENT if lng == "ru" else C_BG_RAISED),
-                           fg=(C_BG if lng == "ru" else C_TEXT_DIM))
-        self.btn_en.config(bg=(C_ACCENT if lng == "en" else C_BG_RAISED),
-                           fg=(C_BG if lng == "en" else C_TEXT_DIM))
-        if self._on_change:
-            self._on_change(lng)
+    def set_lang(self, lang):
+        self._lang = lang
+        self.update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            new = "en" if self._lang == "ru" else "ru"
+            self._lang = new
+            self.update()
+            if self._on_change:
+                self._on_change(new)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        w, h = self.width(), self.height()
+        # capsule background
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(C_INPUT)))
+        p.drawRoundedRect(QRectF(0, 0, w, h), h / 2, h / 2)
+        half = w / 2
+        # active side
+        active_is_ru = self._lang == "ru"
+        p.setBrush(QBrush(QColor(C_ACCENT)))
+        p.drawRoundedRect(
+            QRectF(2 if active_is_ru else half, 2, half - 2, h - 4),
+            (h - 4) / 2, (h - 4) / 2)
+        # text
+        p.setPen(QPen(QColor(C_TEXT)))
+        f = p.font()
+        f.setBold(True)
+        f.setPointSize(9)
+        p.setFont(f)
+        ru_color = QColor(C_INPUT) if active_is_ru else QColor(C_TEXT_DIM)
+        en_color = QColor(C_TEXT_DIM) if active_is_ru else QColor(C_INPUT)
+        p.setPen(QPen(ru_color))
+        p.drawText(QRectF(0, 0, half, h), Qt.AlignmentFlag.AlignCenter, "RU")
+        p.setPen(QPen(en_color))
+        p.drawText(QRectF(half, 0, half, h), Qt.AlignmentFlag.AlignCenter, "EN")
+        p.end()
 
 
-class ThinProgressbar(tk.Canvas):
-    """A thin, flat progress bar drawn on a canvas — modern look."""
+# --------------------------------------------------------------------------- #
+# Card with drop shadow
+# --------------------------------------------------------------------------- #
+class Card(QFrame):
+    def __init__(self, radius=20):
+        super().__init__()
+        self.setObjectName("card")
+        self._radius = radius
+        # Drop shadow via QSS box-shadow is unsupported in Qt; we emulate depth
+        # using a subtle border + slightly lighter background. A real
+        # QGraphicsDropShadowEffect causes access-violation crashes on some
+        # Windows Qt6 builds when combined with QSS backgrounds, so we keep
+        # the look purely via QSS (see #card rule).
 
-    def __init__(self, parent, height=6, bg=C_BG_INSET, fill=C_ACCENT_2, **kw):
-        super().__init__(parent, bg=bg, height=height, highlightthickness=0, **kw)
-        self._value = 0.0
-        self._fill = fill
-        self._bg = bg
-        self._height = height
-        self.bind("<Configure>", lambda e: self._draw())
 
-    def set_color(self, fill):
-        self._fill = fill
-        self._draw()
+# --------------------------------------------------------------------------- #
+# Dotted dropzone (inside queue card)
+# --------------------------------------------------------------------------- #
+class Dropzone(QFrame):
+    def __init__(self, hint_text, sub_text):
+        super().__init__()
+        self.setObjectName("dropzone")
+        self.setAcceptDrops(True)
+        self._hint = hint_text
+        self._sub = sub_text
+        self._hover = False
 
-    def set_value(self, pct):
-        self._value = max(0.0, min(100.0, float(pct)))
-        self._draw()
+    def set_texts(self, hint, sub):
+        self._hint = hint
+        self._sub = sub
+        self.update()
 
-    def _draw(self):
-        self.delete("all")
-        w = self.winfo_width()
-        h = self.winfo_height()
-        if w <= 1 or h <= 1:
-            return
-        # track
-        self.create_rectangle(0, 0, w, h, fill=self._bg, outline="")
-        # fill
-        fw = int(w * self._value / 100.0)
-        if fw > 0:
-            self.create_rectangle(0, 0, fw, h, fill=self._fill, outline="")
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            self._hover = True
+            self.update()
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
+    def dragLeaveEvent(self, _):
+        self._hover = False
+        self.update()
+
+    def dropEvent(self, e):
+        self._hover = False
+        self.update()
+        urls = e.mimeData().urls()
+        paths = []
+        for u in urls:
+            if u.isLocalFile():
+                paths.append(u.toLocalFile())
+        if paths and self.window().__class__.__name__ == "MainWindow":
+            self.window().add_paths(paths)
+        e.acceptProposedAction()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        r = QRectF(0, 0, self.width(), self.height())
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor(C_INPUT)))
+        p.drawRoundedRect(r, 12, 12)
+        # dotted border
+        col = QColor(C_ACCENT) if self._hover else QColor(C_TEXT_DIM)
+        pen = QPen(col, 2)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setDashPattern([1, 4])
+        p.setPen(pen)
+        p.setBrush(Qt.GlobalBrush.NoBrush)
+        p.setBrush(QBrush(Qt.GlobalColor.transparent))
+        p.drawRoundedRect(QRectF(1, 1, self.width() - 2, self.height() - 2), 12, 12)
+        # text
+        p.setPen(QPen(col))
+        f = p.font()
+        f.setPointSize(12)
+        f.setBold(True)
+        p.setFont(f)
+        p.drawText(r, Qt.AlignmentFlag.AlignCenter, self._hint)
+        p.end()
+
+
+# --------------------------------------------------------------------------- #
+# Queue list (custom delegate for progress bar in rows)
+# --------------------------------------------------------------------------- #
+class QueueTree(QTreeWidget):
+    def __init__(self, lang):
+        super().__init__()
+        self.lang = lang
+        self.setObjectName("queueTree")
+        self.setHeaderHidden(False)
+        self.setRootIsDecorated(False)
+        self.setUniformRowHeights(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.setAlternatingRowColors(False)
+        self.setItemDelegate(QueueDelegate(self))
+        self._configure_columns()
+
+    def _configure_columns(self):
+        self.setColumnCount(4)
+        self.setHeaderLabels([tr(self.lang, "col_name"),
+                              tr(self.lang, "col_size"),
+                              tr(self.lang, "col_status"),
+                              tr(self.lang, "col_progress")])
+        self.setColumnWidth(0, 240)
+        self.setColumnWidth(1, 70)
+        self.setColumnWidth(2, 90)
+        self.setColumnWidth(3, 80)
+        # hide the root branch lines
+        self.setStyleSheet(self.styleSheet())
+
+    def retranslate(self, lang):
+        self.lang = lang
+        self.setHeaderLabels([tr(lang, "col_name"),
+                              tr(lang, "col_size"),
+                              tr(lang, "col_status"),
+                              tr(lang, "col_progress")])
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        paths = []
+        for u in e.mimeData().urls():
+            if u.isLocalFile():
+                paths.append(u.toLocalFile())
+        if paths:
+            self.window().add_paths(paths)
+        e.acceptProposedAction()
+
+
+class QueueDelegate(QStyledItemDelegate):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    def paint(self, painter, option, index):
+        # Draw selection background
+        painter.save()
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.setBrush(QBrush(QColor("#2E2E3A")))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(option.rect)
+        # Draw text columns
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        col = index.column()
+        if col == 3:
+            # progress column: draw a mini bar
+            data = index.data(Qt.ItemDataRole.UserRole)
+            pct = 0
+            if isinstance(data, (int, float)):
+                pct = int(data)
+            status_text = ""
+            smi = index.siblingAtColumn(2)
+            if smi is not None:
+                status_text = smi.data(Qt.ItemDataRole.DisplayRole) or ""
+            r = option.rect.adjusted(6, 0, -6, 0)
+            # track
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(QColor("#2A2A36")))
+            bar_h = 6
+            br = QRectF(r.left(), r.center().y() - bar_h / 2, r.width(), bar_h)
+            painter.drawRoundedRect(br, 3, 3)
+            # fill
+            if "processing" in str(status_text).lower() or pct > 0:
+                fill = QColor(C_ACCENT)
+                painter.setBrush(QBrush(fill))
+                fr = QRectF(br.left(), br.top(), br.width() * pct / 100.0, bar_h)
+                painter.drawRoundedRect(fr, 3, 3)
+            painter.setPen(QPen(QColor(C_TEXT_DIM)))
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, f"{pct}%")
+        else:
+            painter.setPen(QPen(QColor(C_TEXT)))
+            if col == 2:
+                # status text colored
+                status_text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+                color = QColor(C_TEXT_DIM)
+                low = str(status_text).lower()
+                if any(w in low for w in ["done", "готово"]):
+                    color = QColor("#39D98A")
+                elif any(w in low for w in ["processing", "конверт"]):
+                    color = QColor("#FFC53D")
+                elif any(w in low for w in ["fail", "ошибк"]):
+                    color = QColor(C_DANGER)
+                elif any(w in low for w in ["skip", "пропуск"]):
+                    color = QColor("#5B8DEF")
+                painter.setPen(QPen(color))
+            painter.drawText(option.rect.adjusted(8, 0, -8, 0),
+                              Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                              str(index.data(Qt.ItemDataRole.DisplayRole) or ""))
+        painter.restore()
+
+
+# --------------------------------------------------------------------------- #
+# Status dot indicator (with pulsing)
+# --------------------------------------------------------------------------- #
+class StatusDot(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(12, 12)
+        self._state = "idle"
+        self._opacity = 1.0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._pulse)
+        self._phase = 0.0
+
+    def set_state(self, state):
+        self._state = state
+        if state == "processing":
+            self._timer.start(80)
+        else:
+            self._timer.stop()
+            self._opacity = 1.0
+        self.update()
+
+    def _pulse(self):
+        import math
+        self._phase += 0.15
+        self._opacity = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(self._phase))
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        if self._state == "done":
+            col = QColor("#39D98A")
+        elif self._state == "error":
+            col = QColor(C_DANGER)
+        elif self._state == "processing":
+            col = QColor("#FFC53D")
+            col.setAlphaF(self._opacity)
+        else:
+            col = QColor("#39D98A")
+            col.setAlphaF(0.5)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(col))
+        p.drawEllipse(QRectF(1, 1, 10, 10))
+        p.end()
 
 
 # --------------------------------------------------------------------------- #
 # Main window
 # --------------------------------------------------------------------------- #
-if _HAS_DND:
-    import tkinterdnd2
-    _BaseRoot = tkinterdnd2.Tk
-else:
-    _BaseRoot = tk.Tk
-
-
-class DropWindow(_BaseRoot):
-    def __init__(self):
+class MainWindow(QMainWindow):
+    def __init__(self, dropped_files=None):
         super().__init__()
         self.settings = load_settings()
         self.lang = self.settings.get("lang") or default_lang()
+        self.queue_files = []
+        self.worker = None
+        self._processing = False
 
-        self.title(tr(self.lang, "title"))
-        self.configure(bg=C_BG)
-        self.minsize(860, 620)
+        self.setWindowTitle(tr(self.lang, "title"))
+        self.setStyleSheet(APP_QSS)
+        # Window background + rounded (frameless-ish? keep standard window but dark)
+        self.setObjectName("mainWindow")
 
+        # Window icon
         try:
-            self.iconbitmap(default=resource_path("ico.ico"))
+            self.setWindowIcon(QIcon(resource_path("ico.ico")))
         except Exception:
             pass
 
-        geo = self.settings.get("geometry") or "980x720"
-        try:
-            self.geometry(geo)
-        except Exception:
-            self.geometry("980x720")
-
-        self.queue = []
-        self.queue_lock = threading.Lock()
-        self.processing = False
-        self.converter = None
-        self._worker_thread = None
-        self._cancel_requested = False
+        # Restore geometry
+        geo = self.settings.get("geometry")
+        if geo:
+            try:
+                self.restoreGeometry(bytes.fromhex(geo))
+            except Exception:
+                self.resize(1080, 760)
+        else:
+            self.resize(1080, 760)
 
         self._build_ui()
         self._apply_lang()
         self._set_status(tr(self.lang, "status_ready", get_today_folder_name()), "idle")
 
-        if _HAS_DND:
-            # whole window is a drop target
-            self.drop_target_register(tkinterdnd2.DND_FILES)
-            self.dnd_bind("<<Drop>>", self._on_drop_root)
-            self.dnd_bind("<<DropEnter>>", self._on_drop_enter)
-            self.dnd_bind("<<DropLeave>>", self._on_drop_leave)
-            # also the input list area
-            self.input_card.drop_target_register(tkinterdnd2.DND_FILES)
-            self.input_card.dnd_bind("<<Drop>>", self._on_drop)
-            self.input_card.dnd_bind("<<DropEnter>>", self._on_drop_enter)
-            self.input_card.dnd_bind("<<DropLeave>>", self._on_drop_leave)
+        # enable drop on whole window
+        self.setAcceptDrops(True)
 
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if dropped_files:
+            QTimer.singleShot(150, lambda: self.add_paths(dropped_files))
 
-    # ---- UI construction ----
+    # ---- UI build ----
     def _build_ui(self):
-        self._configure_style()
+        central = QWidget()
+        central.setObjectName("central")
+        central.setContentsMargins(24, 24, 24, 18)
+        self.setCentralWidget(central)
 
-        # Root container with padding
-        root = tk.Frame(self, bg=C_BG)
-        root.pack(fill="both", expand=True, padx=14, pady=14)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(20)
 
         # ---- Header ----
-        header = tk.Frame(root, bg=C_BG)
-        header.pack(fill="x", pady=(0, 14))
+        header = QWidget()
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(6, 0, 6, 0)
+        hl.setSpacing(12)
+        title = QLabel("EasyConvert")
+        title.setObjectName("appTitle")
+        hl.addWidget(title)
+        hl.addStretch(1)
+        self.update_btn = IconButton("refresh", tr(self.lang, "check_update"),
+                                     size=36, icon_color=C_TEXT_DIM,
+                                     on_click=self.check_update)
+        hl.addWidget(self.update_btn)
+        self.lang_switch = LangSwitch(self.lang, on_change=self._switch_lang)
+        hl.addWidget(self.lang_switch)
+        root.addWidget(header)
 
-        # Logo glyph + title
-        logo = tk.Label(header, text="\u266B", fg=C_ACCENT, bg=C_BG,
-                       font=(FONT, 22, "bold"))
-        logo.pack(side="left", padx=(0, 10))
-        self.title_lbl = tk.Label(header, text=APP_NAME, fg=C_TEXT, bg=C_BG,
-                                  font=(FONT, 18, "bold"))
-        self.title_lbl.pack(side="left")
+        # ---- Two cards: queue + output ----
+        cards = QWidget()
+        cl = QHBoxLayout(cards)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(20)
 
-        # Right side: update btn + lang switch
-        right = tk.Frame(header, bg=C_BG)
-        right.pack(side="right")
-        self.update_btn = IconLabelButton(right, "\u21bb", self.check_update,
-                                          bg=C_BG_RAISED, fg=C_TEXT, size=32)
-        self.update_btn.pack(side="left", padx=(0, 8))
-        self.lang_switch = LangSwitch(right, self.lang, on_change=self._switch_lang)
-        self.lang_switch.pack(side="left")
+        # Left card: queue
+        qcard = Card(radius=20)
+        qcard_l = QVBoxLayout(qcard)
+        qcard_l.setContentsMargins(20, 20, 20, 20)
+        qcard_l.setSpacing(12)
+        # header row
+        qhdr = QHBoxLayout()
+        qhdr.setContentsMargins(0, 0, 0, 0)
+        qhdr.setSpacing(10)
+        qh_icon = QLabel()
+        qh_icon.setPixmap(get_icon("note", 18, C_ACCENT, self.devicePixelRatioF()))
+        qh_icon.setFixedSize(20, 20)
+        qhdr.addWidget(qh_icon)
+        self.queue_title = QLabel(tr(self.lang, "queue"))
+        self.queue_title.setObjectName("cardTitle")
+        qhdr.addWidget(self.queue_title)
+        qhdr.addStretch(1)
+        self.add_file_btn = IconButton("plus", tr(self.lang, "add_file_tip"),
+                                       size=34, icon_color=C_TEXT, on_click=self.choose_files)
+        qhdr.addWidget(self.add_file_btn)
+        self.add_folder_btn = IconButton("folder", tr(self.lang, "add_folder_tip"),
+                                         size=34, icon_color=C_TEXT, on_click=self.choose_folder)
+        qhdr.addWidget(self.add_folder_btn)
+        self.clear_btn = IconButton("trash", tr(self.lang, "clear_tip"),
+                                    size=34, icon_color=C_DANGER, on_click=self.clear_input)
+        qhdr.addWidget(self.clear_btn)
+        qcard_l.addLayout(qhdr)
+        # dropzone
+        self.dropzone = Dropzone(tr(self.lang, "drop_hint"),
+                                 tr(self.lang, "drop_sub"))
+        self.dropzone.setMinimumHeight(120)
+        qcard_l.addWidget(self.dropzone, 0)
+        # queue tree
+        self.queue_tree = QueueTree(self.lang)
+        self.queue_tree.setMinimumHeight(200)
+        qcard_l.addWidget(self.queue_tree, 1)
+        cl.addWidget(qcard, 1)
 
-        # ---- Two-column workspace ----
-        work = tk.Frame(root, bg=C_BG)
-        work.pack(fill="both", expand=True)
-        work.columnconfigure(0, weight=1, uniform="col")
-        work.columnconfigure(1, weight=1, uniform="col")
-        work.rowconfigure(1, weight=1)
+        # Right card: output
+        ocard = Card(radius=20)
+        ocard_l = QVBoxLayout(ocard)
+        ocard_l.setContentsMargins(20, 20, 20, 20)
+        ocard_l.setSpacing(12)
+        ohdr = QHBoxLayout()
+        ohdr.setContentsMargins(0, 0, 0, 0)
+        ohdr.setSpacing(10)
+        oh_icon = QLabel()
+        oh_icon.setPixmap(get_icon("check", 18, "#39D98A", self.devicePixelRatioF()))
+        oh_icon.setFixedSize(20, 20)
+        ohdr.addWidget(oh_icon)
+        self.out_title = QLabel(tr(self.lang, "done_mp3"))
+        self.out_title.setObjectName("cardTitle")
+        ohdr.addWidget(self.out_title)
+        ohdr.addStretch(1)
+        self.open_folder_btn = IconButton("open_folder", tr(self.lang, "open_folder_tip"),
+                                          size=34, icon_color=C_TEXT, on_click=self.open_output_folder)
+        ohdr.addWidget(self.open_folder_btn)
+        self.clear_out_btn = IconButton("trash", tr(self.lang, "clear_tip"),
+                                        size=34, icon_color=C_DANGER, on_click=self.clear_output)
+        ohdr.addWidget(self.clear_out_btn)
+        ocard_l.addLayout(ohdr)
+        # output tree (simple)
+        self.output_tree = QTreeWidget()
+        self.output_tree.setObjectName("queueTree")
+        self.output_tree.setHeaderHidden(False)
+        self.output_tree.setRootIsDecorated(False)
+        self.output_tree.setUniformRowHeights(True)
+        self.output_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.output_tree.setColumnCount(3)
+        self.output_tree.setHeaderLabels([tr(self.lang, "col_name"),
+                                          tr(self.lang, "col_path"),
+                                          tr(self.lang, "col_size")])
+        self.output_tree.setColumnWidth(0, 200)
+        self.output_tree.setColumnWidth(1, 220)
+        self.output_tree.setColumnWidth(2, 70)
+        self.output_tree.itemDoubleClicked.connect(self._open_selected_output)
+        ocard_l.addWidget(self.output_tree, 1)
+        cl.addWidget(ocard, 1)
 
-        # Input card (left)
-        self.input_card = tk.Frame(work, bg=C_BG_RAISED, highlightbackground=C_BORDER,
-                                   highlightthickness=1, bd=0)
-        self.input_card.grid(row=1, column=0, sticky="nsew", padx=(0, 7))
-        self.input_card.columnconfigure(0, weight=1)
-        self.input_card.rowconfigure(1, weight=1)
+        root.addWidget(cards, 1)
 
-        in_hdr = tk.Frame(self.input_card, bg=C_BG_RAISED)
-        in_hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
-        in_icon = tk.Label(in_hdr, text="\u266B", fg=C_ACCENT, bg=C_BG_RAISED,
-                           font=(FONT, 12, "bold"))
-        in_icon.pack(side="left", padx=(0, 8))
-        self.in_title = tk.Label(in_hdr, text=tr(self.lang, "input_panel"),
-                                 fg=C_TEXT, bg=C_BG_RAISED,
-                                 font=(FONT, 10, "bold"))
-        self.in_title.pack(side="left")
-        # input action icons (right of header)
-        in_act = tk.Frame(in_hdr, bg=C_BG_RAISED)
-        in_act.pack(side="right")
-        self.add_files_btn = IconLabelButton(in_act, "+", self.choose_files,
-                                             bg=C_BG_INSET, fg=C_OK, size=28)
-        self.add_files_btn.pack(side="left", padx=2)
-        self.add_folder_btn = IconLabelButton(in_act, "\u25A3", self.choose_folder,
-                                              bg=C_BG_INSET, fg=C_INFO, size=28)
-        self.add_folder_btn.pack(side="left", padx=2)
-        self.clear_input_btn = IconLabelButton(in_act, "\u2715", self.clear_input,
-                                               bg=C_BG_INSET, fg=C_DANGER, size=28)
-        self.clear_input_btn.pack(side="left", padx=2)
+        # ---- Bottom card: settings + actions ----
+        bcard = Card(radius=20)
+        bcard_l = QHBoxLayout(bcard)
+        bcard_l.setContentsMargins(24, 20, 24, 20)
+        bcard_l.setSpacing(32)
 
-        # Empty-state label (shows when queue empty)
-        self.empty_label = tk.Label(self.input_card, text=tr(self.lang, "drop_hint"),
-                                    fg=C_TEXT_FAINT, bg=C_BG_RAISED,
-                                    font=(FONT, 12, "bold"), justify="center")
-        self.empty_sub = tk.Label(self.input_card, text=tr(self.lang, "drop_sub"),
-                                  fg=C_TEXT_FAINT, bg=C_BG_RAISED,
-                                  font=(FONT, 9))
-        # Place them centered, will toggle visibility
-
-        # Input tree
-        self.input_tree = ttk.Treeview(self.input_card,
-                                      columns=("name", "size", "status", "progress"),
-                                      show="tree", selectmode="extended",
-                                      style="Queue.Treeview")
-        self.input_tree.heading("#0", text="")
-        self.input_tree.heading("name", text=tr(self.lang, "col_name"))
-        self.input_tree.heading("size", text=tr(self.lang, "col_size"))
-        self.input_tree.heading("status", text=tr(self.lang, "col_status"))
-        self.input_tree.heading("progress", text=tr(self.lang, "col_progress"))
-        self.input_tree.column("#0", width=28, stretch=False, anchor="center")
-        self.input_tree.column("name", width=200, anchor="w")
-        self.input_tree.column("size", width=64, anchor="e")
-        self.input_tree.column("status", width=80, anchor="center")
-        self.input_tree.column("progress", width=70, anchor="center")
-        self.input_tree.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        isb = ttk.Scrollbar(self.input_card, orient="vertical",
-                           command=self.input_tree.yview, style="Thin.Vertical.TScrollbar")
-        self.input_tree.configure(yscrollcommand=isb.set)
-        isb.place(relx=1.0, rely=0.0, relheight=1.0, anchor="ne", width=8)
-        self._bind_tree_dnd_scroll()
-
-        # tag colors for statuses
-        self.input_tree.tag_configure("pending", foreground=C_TEXT_DIM)
-        self.input_tree.tag_configure("processing", foreground=C_WARN)
-        self.input_tree.tag_configure("done", foreground=C_OK)
-        self.input_tree.tag_configure("failed", foreground=C_DANGER)
-        self.input_tree.tag_configure("skipped", foreground=C_INFO)
-        self.input_tree.tag_configure("overwritten", foreground=C_OK)
-
-        # Output card (right)
-        self.output_card = tk.Frame(work, bg=C_BG_RAISED, highlightbackground=C_BORDER,
-                                    highlightthickness=1, bd=0)
-        self.output_card.grid(row=1, column=1, sticky="nsew", padx=(7, 0))
-        self.output_card.columnconfigure(0, weight=1)
-        self.output_card.rowconfigure(1, weight=1)
-
-        out_hdr = tk.Frame(self.output_card, bg=C_BG_RAISED)
-        out_hdr.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 6))
-        out_icon = tk.Label(out_hdr, text="\u2713", fg=C_ACCENT_2, bg=C_BG_RAISED,
-                            font=(FONT, 12, "bold"))
-        out_icon.pack(side="left", padx=(0, 8))
-        self.out_title = tk.Label(out_hdr, text=tr(self.lang, "output_panel"),
-                                  fg=C_TEXT, bg=C_BG_RAISED,
-                                  font=(FONT, 10, "bold"))
-        self.out_title.pack(side="left")
-        out_act = tk.Frame(out_hdr, bg=C_BG_RAISED)
-        out_act.pack(side="right")
-        self.open_folder_btn = IconLabelButton(out_act, "\u25A2", self.open_output_folder,
-                                                bg=C_BG_INSET, fg=C_INFO, size=28)
-        self.open_folder_btn.pack(side="left", padx=2)
-        self.clear_output_btn = IconLabelButton(out_act, "\u2715", self.clear_output,
-                                                bg=C_BG_INSET, fg=C_DANGER, size=28)
-        self.clear_output_btn.pack(side="left", padx=2)
-
-        # Output tree
-        self.output_tree = ttk.Treeview(self.output_card,
-                                       columns=("name", "path", "size"),
-                                       show="tree", selectmode="extended",
-                                       style="Queue.Treeview")
-        self.output_tree.heading("#0", text="")
-        self.output_tree.heading("name", text=tr(self.lang, "col_name"))
-        self.output_tree.heading("path", text=tr(self.lang, "col_path"))
-        self.output_tree.heading("size", text=tr(self.lang, "col_size"))
-        self.output_tree.column("#0", width=28, stretch=False, anchor="center")
-        self.output_tree.column("name", width=170, anchor="w")
-        self.output_tree.column("path", width=210, anchor="w")
-        self.output_tree.column("size", width=64, anchor="e")
-        self.output_tree.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        osb = ttk.Scrollbar(self.output_card, orient="vertical",
-                            command=self.output_tree.yview, style="Thin.Vertical.TScrollbar")
-        self.output_tree.configure(yscrollcommand=osb.set)
-        osb.place(relx=1.0, rely=0.0, relheight=1.0, anchor="ne", width=8)
-        self.output_tree.bind("<Double-1>", self._open_selected_output)
-
-        # ---- Center action bar (Start / Stop) ----
-        actbar = tk.Frame(root, bg=C_BG)
-        actbar.pack(fill="x", pady=(14, 10))
-        self.start_btn = FlatButton(actbar, tr(self.lang, "start"),
-                                    self.start_processing, bg=C_ACCENT_2, fg=C_BG,
-                                    font_size=12, bold=True, padx=28, pady=10,
-                                    icon="\u25B6")
-        self.start_btn.pack(side="left", padx=(0, 10))
-        self.stop_btn = FlatButton(actbar, tr(self.lang, "stop"),
-                                   self.stop_processing, bg=C_DANGER, fg=C_BG,
-                                   font_size=12, bold=True, padx=28, pady=10,
-                                   icon="\u25A0")
-        self.stop_btn.pack(side="left")
-
-        # ---- Settings panel (compact, no frame) ----
-        sf = tk.Frame(root, bg=C_BG_RAISED, highlightbackground=C_BORDER_SOFT,
-                      highlightthickness=1, bd=0)
-        sf.pack(fill="x", pady=(0, 10))
-        sf.columnconfigure(0, weight=1)
-
-        # Row 1: grouped sections
-        srow1 = tk.Frame(sf, bg=C_BG_RAISED)
-        srow1.pack(fill="x", padx=12, pady=(10, 4))
+        # Left: settings (3 columns)
+        settings_w = QWidget()
+        sl = QHBoxLayout(settings_w)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(36)
 
         # Audio group
-        self.bitrate_var = tk.StringVar(value=self.settings.get("bitrate", "320k"))
-        self.channels_var = tk.StringVar(value=str(self.settings.get("channels", "2")))
-        self._setting_group(srow1, tr(self.lang, "audio"), [
-            ("bitrate", self._combobox_var(self.bitrate_var,
-                          ["320k", "256k", "192k", "128k", "96k"], 6)),
-            ("channels", self._combobox_var(self.channels_var, ["1", "2"], 4)),
-        ])
-        # Manage group
+        audio_col = self._setting_column(tr(self.lang, "audio"))
+        self.bitrate_cb = self._dark_combobox(["320k", "256k", "192k", "128k", "96k"])
+        self.bitrate_cb.setCurrentText(self.settings.get("bitrate", "320k"))
+        audio_col_layout = audio_col.layout()
+        audio_col_layout.addWidget(self._labeled(tr(self.lang, "bitrate"), self.bitrate_cb))
+        self.channels_cb = self._dark_combobox(["1", "2"])
+        self.channels_cb.setCurrentText(str(self.settings.get("channels", "2")))
+        audio_col_layout.addWidget(self._labeled(tr(self.lang, "channels"), self.channels_cb))
+        sl.addWidget(audio_col)
+
+        # Control group
+        ctrl_col = self._setting_column(tr(self.lang, "control"))
         import multiprocessing as _mp
         maxw = max(1, _mp.cpu_count() or 4)
-        self.workers_var = tk.IntVar(value=self.settings.get("workers", 0) or min(4, maxw))
-        self._setting_group(srow1, tr(self.lang, "manage"), [
-            ("workers", self._spinbox_var(self.workers_var, 1, maxw, 4)),
-        ])
+        self.workers_sp = QSpinBox()
+        self.workers_sp.setObjectName("darkControl")
+        self.workers_sp.setRange(1, maxw)
+        self.workers_sp.setValue(self.settings.get("workers", 0) or min(4, maxw))
+        ctrl_col.layout().addWidget(self._labeled(tr(self.lang, "workers"), self.workers_sp))
+        # toggles under control? Put toggles in a separate group below paths
+        sl.addWidget(ctrl_col)
+
         # Paths group
-        self.out_mode_var = tk.StringVar(value=self.settings.get("out_mode", "date"))
-        self.col_var = tk.StringVar(value=self.settings.get("collision", "suffix"))
-        self._setting_group(srow1, tr(self.lang, "paths"), [
-            ("out_mode", self._combobox_var(self.out_mode_var,
-                          ["date", "source", "custom"], 12)),
-            ("collision", self._combobox_var(self.col_var,
-                          ["suffix", "overwrite", "skip"], 10)),
-        ])
-        # choose output button
-        self.out_custom_btn = IconLabelButton(srow1, "\u25A2", self.choose_custom_out,
-                                             bg=C_BG_INSET, fg=C_INFO, size=30)
-        self.out_custom_btn.pack(side="left", padx=(6, 0), pady=4)
+        paths_col = self._setting_column(tr(self.lang, "paths"))
+        self.out_mode_cb = self._dark_combobox(["date", "source", "custom"])
+        self.out_mode_cb.setCurrentText(self.settings.get("out_mode", "date"))
+        self.out_mode_cb.currentTextChanged.connect(self._on_out_mode_changed)
+        paths_col.layout().addWidget(self._labeled(tr(self.lang, "out_mode"), self.out_mode_cb))
+        self.collision_cb = self._dark_combobox(["suffix", "overwrite", "skip"])
+        self.collision_cb.setCurrentText(self.settings.get("collision", "suffix"))
+        paths_col.layout().addWidget(self._labeled(tr(self.lang, "collision"), self.collision_cb))
+        sl.addWidget(paths_col)
 
-        # Row 2: checkboxes
-        srow2 = tk.Frame(sf, bg=C_BG_RAISED)
-        srow2.pack(fill="x", padx=12, pady=(4, 10))
-        self.keep_native_var = tk.BooleanVar(value=self.settings.get("keep_native_rate", False))
-        self.keep_tags_var = tk.BooleanVar(value=self.settings.get("keep_tags", True))
-        self.normalize_var = tk.BooleanVar(value=self.settings.get("normalize", False))
-        self.recursive_var = tk.BooleanVar(value=self.settings.get("recursive", True))
-        self._cb_widgets = []
-        for var, key in [
-            (self.keep_native_var, "keep_native"),
-            (self.keep_tags_var, "keep_tags"),
-            (self.normalize_var, "normalize"),
-            (self.recursive_var, "recursive"),
-        ]:
-            cb = tk.Checkbutton(srow2, text=tr(self.lang, key), variable=var,
-                                bg=C_BG_RAISED, fg=C_TEXT, selectcolor=C_BG_INSET,
-                                activebackground=C_BG_RAISED, activeforeground=C_TEXT,
-                                font=(FONT, 9), bd=0, highlightthickness=0,
-                                cursor="hand2")
-            cb.pack(side="left", padx=(0, 18))
-            self._cb_widgets.append((cb, key))
+        bcard_l.addWidget(settings_w, 1)
 
-        # ---- Bottom: overall progress + status bar ----
-        bottom = tk.Frame(root, bg=C_BG)
-        bottom.pack(fill="x")
+        # Toggles row (small, above actions)
+        toggles_w = QWidget()
+        tl = QVBoxLayout(toggles_w)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(6)
+        self.keep_native_t = ToggleSwitch(tr(self.lang, "keep_native"),
+                                          self.settings.get("keep_native_rate", False))
+        self.keep_tags_t = ToggleSwitch(tr(self.lang, "keep_tags"),
+                                        self.settings.get("keep_tags", True))
+        self.normalize_t = ToggleSwitch(tr(self.lang, "normalize"),
+                                        self.settings.get("normalize", False))
+        self.recursive_t = ToggleSwitch(tr(self.lang, "recursive"),
+                                        self.settings.get("recursive", True))
+        # store labels for retranslation
+        self._toggle_widgets = [
+            (self.keep_native_t, "keep_native"),
+            (self.keep_tags_t, "keep_tags"),
+            (self.normalize_t, "normalize"),
+            (self.recursive_t, "recursive"),
+        ]
+        for t, _ in self._toggle_widgets:
+            tl.addWidget(t)
+        bcard_l.addWidget(toggles_w, 1)
 
-        self.progress = ThinProgressbar(bottom, height=8, bg=C_BG_INSET, fill=C_ACCENT_2)
-        self.progress.pack(fill="x", pady=(0, 6))
+        # Right: actions
+        actions_w = QWidget()
+        al = QVBoxLayout(actions_w)
+        al.setContentsMargins(0, 0, 0, 0)
+        al.setSpacing(12)
+        # Start button
+        self.start_btn = QPushButton(tr(self.lang, "start"))
+        self.start_btn.setObjectName("startBtn")
+        self.start_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.start_btn.setMinimumHeight(52)
+        self.start_btn.clicked.connect(self.start_processing)
+        # Stop button
+        self.stop_btn = QPushButton(tr(self.lang, "stop"))
+        self.stop_btn.setObjectName("stopBtn")
+        self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.stop_btn.setMinimumHeight(44)
+        self.stop_btn.clicked.connect(self.stop_processing)
+        al.addWidget(self.start_btn)
+        al.addWidget(self.stop_btn)
+        bcard_l.addWidget(actions_w, 1)
 
-        statusbar = tk.Frame(bottom, bg=C_BG)
-        statusbar.pack(fill="x")
-        self.status_icon = tk.Label(statusbar, text="\u25CF", fg=C_TEXT_FAINT,
-                                    bg=C_BG, font=(FONT, 10))
-        self.status_icon.pack(side="left", padx=(0, 8))
-        self.status_var = tk.StringVar(value="")
-        self.status_label = tk.Label(statusbar, textvariable=self.status_var,
-                                     fg=C_TEXT_DIM, bg=C_BG, font=(FONT, 9),
-                                     anchor="w", justify="left")
-        self.status_label.pack(side="left", fill="x", expand=True)
-        self.ver_label = tk.Label(statusbar, text=f"v{APP_VERSION}", fg=C_TEXT_FAINT,
-                                  bg=C_BG, font=(FONT, 8))
-        self.ver_label.pack(side="right")
+        root.addWidget(bcard, 0)
 
-        # Initial empty-state placement
-        self._toggle_empty_state()
+        # ---- Status bar ----
+        sb = QWidget()
+        sb_l = QHBoxLayout(sb)
+        sb_l.setContentsMargins(10, 0, 10, 0)
+        sb_l.setSpacing(10)
+        self.status_dot = StatusDot()
+        sb_l.addWidget(self.status_dot)
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("statusText")
+        sb_l.addWidget(self.status_label)
+        sb_l.addStretch(1)
+        self.ver_label = QLabel(f"v{APP_VERSION}")
+        self.ver_label.setObjectName("verText")
+        sb_l.addWidget(self.ver_label)
+        root.addWidget(sb)
 
-    def _configure_style(self):
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
-        # Treeview (queue style)
-        style.configure("Queue.Treeview", background=C_BG_INSET, foreground=C_TEXT,
-                        fieldbackground=C_BG_INSET, borderwidth=0, rowheight=26)
-        style.configure("Queue.Treeview.Heading", background=C_BG_RAISED,
-                        foreground=C_TEXT_DIM, borderwidth=0,
-                        font=(FONT, 9, "bold"), relief="flat")
-        style.map("Queue.Treeview.Heading", background=[("active", C_BORDER)])
-        style.map("Queue.Treeview", background=[("selected", C_BORDER)])
-        # Thin scrollbar
-        style.configure("Thin.Vertical.TScrollbar", background=C_BORDER,
-                        troughcolor=C_BG_INSET, borderwidth=0, arrowcolor=C_BG_INSET,
-                        arrowsize=0, gripcount=0, width=8)
-        style.map("Thin.Vertical.TScrollbar", background=[("active", C_ACCENT)])
+        # progress bar (thin)
+        self.progress = QProgressBar()
+        self.progress.setObjectName("thinProgress")
+        self.progress.setFixedHeight(4)
+        self.progress.setTextVisible(False)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        root.addWidget(self.progress)
 
-    def _bind_tree_dnd_scroll(self):
-        # Mouse wheel scrolling for input tree
-        def _wheel(event):
-            self.input_tree.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        self.input_tree.bind("<MouseWheel>", _wheel)
-
-    # ---- setting group helpers ----
-    def _setting_group(self, parent, title, items):
-        g = tk.Frame(parent, bg=C_BG_RAISED)
-        g.pack(side="left", padx=(0, 18))
-        title_lbl = tk.Label(g, text=title.upper(), fg=C_TEXT_FAINT, bg=C_BG_RAISED,
-                             font=(FONT, 7, "bold"))
-        title_lbl.pack(anchor="w", padx=2, pady=(0, 2))
+    def _setting_column(self, title):
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+        title_lbl = QLabel(title)
+        title_lbl.setObjectName("groupTitle")
+        lay.addWidget(title_lbl)
+        # store for retranslation
         if not hasattr(self, "_group_titles"):
             self._group_titles = []
         self._group_titles.append((title_lbl, title))
-        for key, widget in items:
-            row = tk.Frame(g, bg=C_BG_RAISED)
-            row.pack(anchor="w", pady=1)
-            widget.pack(in_=row, side="left")
+        return w
 
-    def _combobox_var(self, var, values, width):
-        cb = ttk.Combobox(textvariable=var, values=values, width=width,
-                          state="readonly", style="Queue.Treeview")
+    def _dark_combobox(self, values):
+        cb = QComboBox()
+        cb.setObjectName("darkCombo")
+        cb.addItems(values)
         return cb
 
-    def _spinbox_var(self, var, frm, to, width):
-        sp = ttk.Spinbox(textvariable=var, from_=frm, to=to, width=width,
-                         style="Queue.Treeview")
-        return sp
-
-    def _out_mode_label(self, key):
-        m = {"date": {"ru": "по дате", "en": "by date"},
-             "source": {"ru": "рядом с исх.", "en": "next to source"},
-             "custom": {"ru": "выбрать…", "en": "choose…"}}
-        return m.get(key, {}).get(self.lang, key)
-
-    def _col_label(self, key):
-        m = {"suffix": {"ru": "добавить _1", "en": "add _1"},
-             "overwrite": {"ru": "перезаписать", "en": "overwrite"},
-             "skip": {"ru": "пропустить", "en": "skip"}}
-        return m.get(key, {}).get(self.lang, key)
-
-    def _spinbox(self, value, frm, to, width):
-        var = tk.IntVar(value=value)
-        sp = ttk.Spinbox(textvariable=var, from_=frm, to=to, width=width,
-                         style="Queue.Treeview")
-        sp.__ec_var = var
-        return sp
-
-    def _setting_group_titles_widgets(self):
-        # Returns list of (group_title_label, group_frame) in order: audio, manage, paths
-        result = []
-        sf = self.winfo_children()  # not robust; use stored refs instead
-        return result
+    def _labeled(self, label_text, control):
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        lbl = QLabel(label_text)
+        lbl.setObjectName("fieldLabel")
+        lay.addWidget(lbl)
+        lay.addWidget(control)
+        return w
 
     # ---- language ----
     def _switch_lang(self, new_lang):
@@ -1097,277 +1479,215 @@ class DropWindow(_BaseRoot):
 
     def _apply_lang(self):
         L = self.lang
-        self.title(tr(L, "title"))
-        self.in_title.config(text=tr(L, "input_panel"))
-        self.out_title.config(text=tr(L, "output_panel"))
-        self.empty_label.config(text=tr(L, "drop_hint"))
-        self.empty_sub.config(text=tr(L, "drop_sub"))
-        self.start_btn.set_text(tr(L, "start"), icon="\u25B6")
-        self.stop_btn.set_text(tr(L, "stop"), icon="\u25A0")
-        self.input_tree.heading("name", text=tr(L, "col_name"))
-        self.input_tree.heading("size", text=tr(L, "col_size"))
-        self.input_tree.heading("status", text=tr(L, "col_status"))
-        self.input_tree.heading("progress", text=tr(L, "col_progress"))
-        self.output_tree.heading("name", text=tr(L, "col_name"))
-        self.output_tree.heading("path", text=tr(L, "col_path"))
-        self.output_tree.heading("size", text=tr(L, "col_size"))
-        # checkbox labels
-        for cb, key in self._cb_widgets:
-            cb.config(text=tr(L, key))
-        # setting group titles + combobox values (rebuild out_mode display)
-        # rebuild group titles
-        groups = [w for w in self.winfo_children()]
-        self._refresh_setting_group_titles()
-
-    def _refresh_setting_group_titles(self):
-        L = self.lang
+        self.setWindowTitle(tr(L, "title"))
+        self.queue_title.setText(tr(L, "queue"))
+        self.out_title.setText(tr(L, "done_mp3"))
+        self.dropzone.set_texts(tr(L, "drop_hint"), tr(L, "drop_sub"))
+        self.update_btn.setToolTip(tr(L, "check_update"))
+        self.add_file_btn.setToolTip(tr(L, "add_file_tip"))
+        self.add_folder_btn.setToolTip(tr(L, "add_folder_tip"))
+        self.clear_btn.setToolTip(tr(L, "clear_tip"))
+        self.open_folder_btn.setToolTip(tr(L, "open_folder_tip"))
+        self.clear_out_btn.setToolTip(tr(L, "clear_tip"))
+        self.start_btn.setText(tr(L, "start"))
+        self.stop_btn.setText(tr(L, "stop"))
+        self.queue_tree.retranslate(L)
+        self.output_tree.setHeaderLabels([tr(L, "col_name"), tr(L, "col_path"), tr(L, "col_size")])
         for title_lbl, title_key in getattr(self, "_group_titles", []):
-            title_lbl.config(text=title_key.upper())
-
-    # ---- empty state ----
-    def _toggle_empty_state(self):
-        has_items = len(self.input_tree.get_children()) > 0
-        if has_items:
-            try:
-                self.empty_label.place_forget()
-                self.empty_sub.place_forget()
-            except Exception:
-                pass
-        else:
-            self.empty_label.place(relx=0.5, rely=0.42, anchor="center")
-            self.empty_sub.place(relx=0.5, rely=0.60, anchor="center")
-            self.empty_label.lift()
-            self.empty_sub.lift()
-
-    # ---- DnD ----
-    def _on_drop_enter(self, event):
-        try:
-            self.input_card.config(highlightbackground=C_ACCENT)
-        except Exception:
-            pass
-
-    def _on_drop_leave(self, event):
-        try:
-            self.input_card.config(highlightbackground=C_BORDER)
-        except Exception:
-            pass
-
-    def _on_drop(self, event):
-        self._on_drop_leave(event)
-        files = parse_dropped_files(event.data)
-        self.add_paths(files)
-
-    def _on_drop_root(self, event):
-        files = parse_dropped_files(event.data)
-        self.add_paths(files)
+            title_lbl.setText(tr(L, title_key))
+        for t, key in getattr(self, "_toggle_widgets", []):
+            t.set_text(tr(L, key))
 
     # ---- file picking ----
     def choose_files(self):
-        files = filedialog.askopenfilenames(
-            title=tr(self.lang, "msg_pick_files"),
-            filetypes=[(tr(self.lang, "audio_files"), " ".join("*" + e for e in sorted(AUDIO_EXTS))),
-                       (tr(self.lang, "all_files"), "*.*")],
-        )
+        from PyQt6.QtWidgets import QFileDialog
+        files, _ = QFileDialog.getOpenFileNames(
+            self, tr(self.lang, "msg_pick_files"), "",
+            f"{tr(self.lang, 'audio_files')} (*{' *'.join(sorted(AUDIO_EXTS))});;"
+            f"{tr(self.lang, 'all_files')} (*.*)")
         if files:
             self.add_paths(list(files))
 
     def choose_folder(self):
-        folder = filedialog.askdirectory(title=tr(self.lang, "msg_pick_folder"))
+        from PyQt6.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(self, tr(self.lang, "msg_pick_folder"))
         if folder:
             self.add_paths([folder])
 
     def choose_custom_out(self):
-        d = filedialog.askdirectory(title=tr(self.lang, "msg_pick_output"))
+        from PyQt6.QtWidgets import QFileDialog
+        d = QFileDialog.getExistingDirectory(self, tr(self.lang, "msg_pick_output"))
         if d:
             self.settings["custom_out"] = d
-            self.out_mode_var.set("custom")
+            self.out_mode_cb.setCurrentText("custom")
             save_settings(self.settings)
 
+    def _on_out_mode_changed(self, val):
+        if val == "custom" and not self.settings.get("custom_out"):
+            self.choose_custom_out()
+
     def add_paths(self, paths):
-        files = collect_audio_files_from_paths(paths, self.recursive_var.get())
+        files = collect_audio_files_from_paths(paths, self.recursive_t.state())
         added = 0
-        with self.queue_lock:
-            existing = set(self.queue)
-            for f in files:
-                if f not in existing:
-                    self.queue.append(f)
-                    existing.add(f)
-                    added += 1
-        self._refresh_input_tree()
+        existing = set(self.queue_files)
+        for f in files:
+            if f not in existing:
+                self.queue_files.append(f)
+                existing.add(f)
+                added += 1
+        self._refresh_queue_tree()
         if added:
             self._set_status(tr(self.lang, "status_added", added), "idle")
         else:
             self._set_status(tr(self.lang, "status_empty_queue"), "idle")
 
-    def _refresh_input_tree(self):
-        for iid in self.input_tree.get_children():
-            self.input_tree.delete(iid)
-        with self.queue_lock:
-            items = list(self.queue)
-        for i, f in enumerate(items):
+    def _refresh_queue_tree(self):
+        self.queue_tree.clear()
+        for i, f in enumerate(self.queue_files):
             try:
                 size = human_size(os.path.getsize(f))
             except Exception:
                 size = "—"
-            self.input_tree.insert("", "end", iid=str(i),
-                                   text="",
-                                   values=(os.path.basename(f), size,
-                                           tr(self.lang, "st_pending"), "—"),
-                                   tags=("pending",))
+            it = QTreeWidgetItem([os.path.basename(f), size,
+                                  tr(self.lang, "st_pending"), "0%"])
+            it.setData(3, Qt.ItemDataRole.UserRole, 0)
+            it.setForeground(2, QColor(C_TEXT_DIM))
+            self.queue_tree.addTopLevelItem(it)
         self._toggle_empty_state()
 
+    def _toggle_empty_state(self):
+        has = self.queue_tree.topLevelItemCount() > 0
+        self.dropzone.setVisible(not has)
+        self.queue_tree.setVisible(has)
+        # re-layout
+        self.centralWidget().updateGeometry()
+
     def clear_input(self):
-        if not self.queue and not self.input_tree.get_children():
+        if not self.queue_files:
             return
-        if not messagebox.askyesno(APP_NAME, tr(self.lang, "confirm_clear")):
+        if not self._confirm(tr(self.lang, "confirm_clear")):
             return
-        with self.queue_lock:
-            self.queue.clear()
-        self._refresh_input_tree()
+        self.queue_files.clear()
+        self._refresh_queue_tree()
         self._set_status(tr(self.lang, "status_ready", get_today_folder_name()), "idle")
 
     def clear_output(self):
-        if not self.output_tree.get_children():
+        if not self.output_tree.topLevelItemCount():
             return
-        if not messagebox.askyesno(APP_NAME, tr(self.lang, "confirm_clear")):
+        if not self._confirm(tr(self.lang, "confirm_clear")):
             return
-        for iid in self.output_tree.get_children():
-            self.output_tree.delete(iid)
+        self.output_tree.clear()
+
+    def _confirm(self, text):
+        from PyQt6.QtWidgets import QMessageBox
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(text)
+        box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        box.setStyleSheet(APP_QSS)
+        return box.exec() == QMessageBox.StandardButton.Yes
 
     def open_output_folder(self):
-        sel = self.output_tree.selection()
+        sel = self.output_tree.selectedItems()
         if sel:
-            item = self.output_tree.item(sel[0])
-            path = item["values"][1]
+            path = sel[0].text(1)
             try:
-                os.startfile(path)
+                self._startfile(path)
                 return
             except Exception:
                 pass
         try:
-            os.startfile(get_or_create_today_folder())
+            self._startfile(get_or_create_today_folder())
         except Exception as e:
             self._set_status(f"open folder failed: {e}", "error")
 
-    def _open_selected_output(self, event):
-        sel = self.output_tree.selection()
-        if not sel:
-            return
-        item = self.output_tree.item(sel[0])
-        name = item["values"][0]
-        folder = item["values"][1]
+    def _startfile(self, path):
+        if sys.platform == "win32":
+            os.startfile(path)
+        else:
+            subprocess.Popen(["xdg-open", path])
+
+    def _open_selected_output(self, item):
+        name = item.text(0)
+        folder = item.text(1)
         full = os.path.join(folder, name + ("" if name.lower().endswith(".mp3") else ".mp3"))
         try:
-            os.startfile(full)
+            self._startfile(full)
         except Exception:
             try:
-                os.startfile(folder)
+                self._startfile(folder)
             except Exception:
                 pass
 
     # ---- processing ----
-    def _collect_settings_from_ui(self):
-        self.settings["bitrate"] = self.bitrate_var.get()
-        self.settings["channels"] = self.channels_var.get()
+    def _collect_settings(self):
+        self.settings["bitrate"] = self.bitrate_cb.currentText()
+        self.settings["channels"] = self.channels_cb.currentText()
         try:
-            self.settings["workers"] = int(self.workers_var.get() or 1)
+            self.settings["workers"] = int(self.workers_sp.value())
         except Exception:
             self.settings["workers"] = 1
-        self.settings["out_mode"] = self.out_mode_var.get()
-        self.settings["collision"] = self.col_var.get()
-        self.settings["keep_native_rate"] = bool(self.keep_native_var.get())
-        self.settings["keep_tags"] = bool(self.keep_tags_var.get())
-        self.settings["normalize"] = bool(self.normalize_var.get())
-        self.settings["recursive"] = bool(self.recursive_var.get())
+        self.settings["out_mode"] = self.out_mode_cb.currentText()
+        self.settings["collision"] = self.collision_cb.currentText()
+        self.settings["keep_native_rate"] = bool(self.keep_native_t.state())
+        self.settings["keep_tags"] = bool(self.keep_tags_t.state())
+        self.settings["normalize"] = bool(self.normalize_t.state())
+        self.settings["recursive"] = bool(self.recursive_t.state())
         save_settings(self.settings)
 
     def start_processing(self):
-        self._collect_settings_from_ui()
-        with self.queue_lock:
-            files = list(self.queue)
-        if not files:
+        self._collect_settings()
+        if not self.queue_files:
             self._set_status(tr(self.lang, "status_empty_queue"), "idle")
             return
-        self.processing = True
-        self._cancel_requested = False
+        if self._processing:
+            return
+        self._processing = True
         self._set_ui_busy(True)
-        self.progress.set_color(C_ACCENT_2)
-        self._worker_thread = threading.Thread(target=self._worker, args=(files,), daemon=True)
-        self._worker_thread.start()
-
-    def _worker(self, files):
-        total = len(files)
-        log.info(tr(self.lang, "log_conv_start", total))
-        converter = Converter(self.settings, self.lang, on_progress=self._on_progress)
-        self.converter = converter
-        ok = 0
-        fail = 0
-        skip = 0
-        for i, f in enumerate(files, start=1):
-            if self._cancel_requested:
-                break
-            self._on_item(i, f, "processing", None)
-            status, msg, out_path = converter.convert_file(f, i, total)
-            if status == "done":
-                ok += 1
-                if out_path:
-                    self.after(0, lambda p=out_path: self._add_output(p))
-            elif status == "skipped":
-                skip += 1
-                if out_path:
-                    self.after(0, lambda p=out_path: self._add_output(p))
-            elif status == "cancelled":
-                break
-            else:
-                fail += 1
-            self._on_item(i, f, status, msg)
-            log.info(msg)
-        self.after(0, lambda: self._on_done(ok, fail, skip, total))
+        self.progress.setValue(0)
+        self.worker = ConvertWorker(list(self.queue_files), self.settings, self.lang)
+        self.worker.progress.connect(self._on_progress)
+        self.worker.item_status.connect(self._on_item_status)
+        self.worker.output_ready.connect(self._add_output)
+        self.worker.finished_run.connect(self._on_done)
+        self.worker.cancelled.connect(lambda: self._set_status(
+            tr(self.lang, "status_cancelled"), "error"))
+        self.worker.log_line.connect(lambda s: log.info(s))
+        self.worker.start()
 
     def stop_processing(self):
-        self._cancel_requested = True
-        if self.converter:
-            self.converter.cancel()
+        if self.worker:
+            self.worker.cancel()
         self._set_status(tr(self.lang, "status_cancelled"), "error")
-        self.progress.set_color(C_DANGER)
 
     def _on_progress(self, index, total, pct, name):
         overall = int(((index - 1) / max(total, 1)) * 100) + int(pct / max(total, 1))
         overall = max(0, min(100, overall))
-        self.after(0, lambda: self.progress.set_value(overall))
-        self.after(0, lambda: self._set_status(
-            tr(self.lang, "status_processing", index, total, name), "processing"))
-        self.after(0, lambda i=index, p=pct: self._update_input_row(i - 1, p))
+        self.progress.setValue(overall)
+        self._set_status(tr(self.lang, "status_processing", index, total, name), "processing")
+        # update row progress
+        if 0 < index <= self.queue_tree.topLevelItemCount():
+            it = self.queue_tree.topLevelItem(index - 1)
+            it.setData(3, Qt.ItemDataRole.UserRole, pct)
+            it.setText(3, f"{pct}%")
+            it.setText(2, tr(self.lang, "st_processing"))
+            self.queue_tree.viewport().update()
 
-    def _on_item(self, index, f, status, msg):
-        iid = str(index - 1)
-        tag = status if status in ("pending", "processing", "done", "failed", "skipped", "overwritten") else "failed"
+    def _on_item_status(self, index, status, path):
+        if not (0 < index <= self.queue_tree.topLevelItemCount()):
+            return
+        it = self.queue_tree.topLevelItem(index - 1)
         label_map = {"pending": "st_pending", "processing": "st_processing",
                      "done": "st_done", "failed": "st_failed",
-                     "skipped": "st_skipped", "overwritten": "st_overwritten"}
+                     "skipped": "st_skipped"}
         label = tr(self.lang, label_map.get(status, "st_failed"))
-        try:
-            size = human_size(os.path.getsize(f))
-        except Exception:
-            size = "—"
-        progress_txt = "—" if status in ("pending", "done", "skipped", "failed") else ("100%" if status == "done" else "—")
+        it.setText(2, label)
         if status == "done":
-            progress_txt = "100%"
+            it.setData(3, Qt.ItemDataRole.UserRole, 100)
+            it.setText(3, "100%")
         elif status == "failed":
-            progress_txt = "!"
-        self.after(0, lambda: self.input_tree.item(
-            iid, values=(os.path.basename(f), size, label, progress_txt), tags=(tag,)))
-
-    def _update_input_row(self, idx, pct):
-        iid = str(idx)
-        try:
-            cur = self.input_tree.item(iid)["values"]
-            name = cur[0]
-            size = cur[1]
-            status = tr(self.lang, "st_processing")
-            self.input_tree.item(iid, values=(name, size, status, f"{pct}%"), tags=("processing",))
-        except Exception:
-            pass
+            it.setText(3, "!")
+        self.queue_tree.viewport().update()
 
     def _add_output(self, path):
         name = os.path.basename(path)
@@ -1376,34 +1696,27 @@ class DropWindow(_BaseRoot):
             size_s = human_size(os.path.getsize(path))
         except Exception:
             size_s = "—"
-        self.output_tree.insert("", "end", values=(name, folder, size_s))
+        it = QTreeWidgetItem([name, folder, size_s])
+        self.output_tree.addTopLevelItem(it)
+        self.output_tree.scrollToBottom()
 
     def _on_done(self, ok, fail, skip, total):
-        self.processing = False
+        self._processing = False
         self._set_ui_busy(False)
-        self.progress.set_value(0)
+        self.progress.setValue(0)
         state = "error" if fail > 0 else "done"
         self._set_status(tr(self.lang, "status_done", ok, total, fail, skip), state)
 
     # ---- helpers ----
     def _set_status(self, msg, state="idle"):
-        self.status_var.set(msg)
-        color_map = {"idle": C_TEXT_FAINT, "processing": C_WARN,
-                     "done": C_OK, "error": C_DANGER}
-        icon_map = {"idle": "\u25CF", "processing": "\u25CF",
-                    "done": "\u2713", "error": "\u2715"}
-        self.status_icon.config(text=icon_map.get(state, "\u25CF"),
-                                fg=color_map.get(state, C_TEXT_FAINT))
+        self.status_label.setText(msg)
+        self.status_dot.set_state(state)
 
     def _set_ui_busy(self, busy):
-        def _do():
-            st = "disabled" if busy else "normal"
-            self.add_files_btn.set_state(not busy)
-            self.add_folder_btn.set_state(not busy)
-            self.clear_input_btn.set_state(not busy)
-            self.start_btn.set_state(not busy)
-            self.clear_output_btn.set_state(not busy)
-        self.after(0, _do)
+        self.start_btn.setEnabled(not busy)
+        self.add_file_btn.setEnabled(not busy)
+        self.add_folder_btn.setEnabled(not busy)
+        self.clear_btn.setEnabled(not busy)
 
     # ---- update check ----
     def check_update(self):
@@ -1425,16 +1738,37 @@ class DropWindow(_BaseRoot):
                 self._set_status(tr(self.lang, "status_update_fail", e), "error")
         threading.Thread(target=_do, daemon=True).start()
 
+    # ---- DnD on whole window ----
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        else:
+            e.ignore()
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        paths = []
+        for u in e.mimeData().urls():
+            if u.isLocalFile():
+                paths.append(u.toLocalFile())
+        if paths:
+            self.add_paths(paths)
+        e.acceptProposedAction()
+
     # ---- close ----
-    def _on_close(self):
+    def closeEvent(self, e):
         try:
-            self.settings["geometry"] = self.geometry()
+            self.settings["geometry"] = self.saveGeometry().toHex().data().decode()
         except Exception:
             pass
-        self._collect_settings_from_ui()
-        if self.processing and self.converter:
-            self.converter.cancel()
-        self.destroy()
+        self._collect_settings()
+        if self._processing and self.worker:
+            self.worker.cancel()
+            self.worker.wait(2000)
+        super().closeEvent(e)
 
 
 def _ver_gt(a, b):
@@ -1443,23 +1777,261 @@ def _ver_gt(a, b):
     return parts(a) > parts(b)
 
 
-def parse_dropped_files(data):
-    result = []
-    if isinstance(data, (list, tuple)):
-        items = list(data)
-    else:
-        items = re.findall(r"\{[^}]*\}|\"[^\"]*\"|\S+", str(data))
-    for p in items:
-        p = p.strip()
-        if not p:
-            continue
-        if p.startswith("{") and p.endswith("}"):
-            p = p[1:-1]
-        elif p.startswith('"') and p.endswith('"'):
-            p = p[1:-1]
-        if p:
-            result.append(p)
-    return result
+# --------------------------------------------------------------------------- #
+# QSS stylesheet
+# --------------------------------------------------------------------------- #
+APP_QSS = f"""
+* {{
+    font-family: 'Segoe UI', 'Inter', 'Roboto', sans-serif;
+    color: {C_TEXT};
+    outline: none;
+}}
+#mainWindow, QMainWindow {{
+    background: {C_MAIN_BG};
+}}
+#central {{
+    background: {C_MAIN_BG};
+}}
+#appTitle {{
+    color: {C_TEXT};
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+}}
+#cardTitle {{
+    color: {C_TEXT};
+    font-size: 14px;
+    font-weight: 700;
+}}
+#groupTitle {{
+    color: {C_TEXT_DIM};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+#fieldLabel {{
+    color: {C_TEXT_DIM};
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}}
+#card {{
+    background: {C_CARD};
+    border: 1px solid #2A2A36;
+    border-radius: 20px;
+}}
+#iconBtn {{
+    background: {C_INPUT};
+    border: none;
+    border-radius: 12px;
+}}
+#iconBtn:hover {{
+    background: #2F2F3E;
+}}
+#iconBtn:disabled {{
+    background: #1F1F29;
+    color: #4A4A5A;
+}}
+#darkCombo, QComboBox {{
+    background: {C_INPUT};
+    border: 1px solid #2A2A36;
+    border-radius: 12px;
+    padding: 8px 12px;
+    color: {C_TEXT};
+    min-height: 18px;
+    font-size: 12px;
+}}
+#darkCombo:hover {{
+    border: 1px solid #3A3A4A;
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 22px;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    width: 0; height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid {C_TEXT_DIM};
+    margin-right: 10px;
+}}
+QComboBox QAbstractItemView {{
+    background: {C_INPUT};
+    border: 1px solid #2A2A36;
+    border-radius: 8px;
+    selection-background-color: #2F2F3E;
+    color: {C_TEXT};
+    padding: 4px;
+    outline: none;
+}}
+#darkControl, QSpinBox {{
+    background: {C_INPUT};
+    border: 1px solid #2A2A36;
+    border-radius: 12px;
+    padding: 8px 12px;
+    color: {C_TEXT};
+    min-height: 18px;
+    font-size: 12px;
+}}
+QSpinBox::up-button, QSpinBox::down-button {{
+    background: transparent;
+    border: none;
+    width: 18px;
+}}
+QSpinBox::up-arrow {{
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid {C_TEXT_DIM};
+}}
+QSpinBox::down-arrow {{
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid {C_TEXT_DIM};
+}}
+#startBtn {{
+    background: {C_ACCENT};
+    color: #000000;
+    border: none;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}}
+#startBtn:hover {{
+    background: #5CF5FF;
+}}
+#startBtn:disabled {{
+    background: #1F8E96;
+    color: #0A3A3D;
+}}
+#stopBtn {{
+    background: {C_INPUT};
+    color: {C_DANGER};
+    border: 1px solid {C_DANGER};
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+#stopBtn:hover {{
+    background: #2A1A22;
+}}
+#toggleLabel {{
+    color: {C_TEXT};
+    font-size: 11px;
+    font-weight: 500;
+}}
+#statusText {{
+    color: {C_TEXT_DIM};
+    font-size: 11px;
+}}
+#verText {{
+    color: {C_TEXT_DIM};
+    font-size: 10px;
+}}
+#thinProgress, QProgressBar {{
+    background: {C_INPUT};
+    border: none;
+    border-radius: 2px;
+}}
+QProgressBar::chunk {{
+    background: {C_ACCENT};
+    border-radius: 2px;
+}}
+/* Tree / queue */
+#queueTree, QTreeWidget {{
+    background: {C_INPUT};
+    border: 1px solid #2A2A36;
+    border-radius: 12px;
+    color: {C_TEXT};
+    outline: none;
+    font-size: 12px;
+    padding: 2px;
+}}
+QTreeWidget::item {{
+    padding: 6px 4px;
+    border: none;
+}}
+QTreeWidget::item:selected {{
+    background: #2E2E3A;
+}}
+QTreeWidget::branch {{
+    background: transparent;
+}}
+QHeaderView::section {{
+    background: {C_INPUT};
+    color: {C_TEXT_DIM};
+    border: none;
+    border-bottom: 1px solid #2A2A36;
+    padding: 6px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}}
+QHeaderView {{
+    background: transparent;
+}}
+/* Custom scrollbars — thin & dark */
+QScrollBar:vertical {{
+    background: transparent;
+    width: 8px;
+    margin: 4px;
+}}
+QScrollBar::handle:vertical {{
+    background: #3A3A4A;
+    border-radius: 4px;
+    min-height: 30px;
+}}
+QScrollBar::handle:vertical:hover {{
+    background: {C_ACCENT};
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 8px;
+    margin: 4px;
+}}
+QScrollBar::handle:horizontal {{
+    background: #3A3A4A;
+    border-radius: 4px;
+    min-width: 30px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {C_ACCENT};
+}}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+    width: 0px;
+}}
+QToolTip {{
+    background: {C_INPUT};
+    color: {C_TEXT};
+    border: 1px solid #2A2A36;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+}}
+QMessageBox {{
+    background: {C_CARD};
+}}
+QMessageBox QLabel {{
+    color: {C_TEXT};
+    font-size: 12px;
+}}
+QMessageBox QPushButton {{
+    background: {C_INPUT};
+    color: {C_TEXT};
+    border: 1px solid #2A2A36;
+    border-radius: 8px;
+    padding: 6px 16px;
+    min-width: 60px;
+}}
+QMessageBox QPushButton:hover {{
+    background: #2F2F3E;
+}}
+"""
 
 
 # --------------------------------------------------------------------------- #
@@ -1468,9 +2040,7 @@ def parse_dropped_files(data):
 def run_cli(files, settings):
     L = settings.get("lang") or default_lang()
     total = len(files)
-    ok = 0
-    fail = 0
-    skip = 0
+    ok = fail = skip = 0
     converter = Converter(settings, L)
     print(f"EasyConvert v{APP_VERSION} — CLI mode")
     print(f"Files: {total}  bitrate={settings.get('bitrate')}  out={settings.get('out_mode')}")
@@ -1487,7 +2057,7 @@ def run_cli(files, settings):
 
 
 def main():
-    # CLI mode: EasyConvert --cli file1 file2 ... [--bitrate X --outdir Y --lang L --channels N]
+    # CLI mode
     if len(sys.argv) >= 2 and sys.argv[1] == "--cli":
         s = load_settings()
         i = 2
@@ -1515,10 +2085,14 @@ def main():
             if os.path.exists(arg):
                 dropped.append(arg)
 
-    app = DropWindow()
-    if dropped:
-        app.after(100, lambda: app.add_paths(dropped))
-    app.mainloop()
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    # High-DPI: rely on default style; Fusion can conflict with our QSS on
+    # some Windows builds.
+    sys.exit(app.exec())
+    win = MainWindow(dropped_files=dropped if dropped else None)
+    win.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
