@@ -26,19 +26,28 @@
 **EasyConvert** is a tiny, standalone Windows application that converts **any audio file into MP3**.
 Drag an audio file into the window (or drop it onto the `.exe`) — and it becomes an MP3. That's it.
 
-### ✨ Features (v1.1)
+### ✨ Features (v1.1.2)
 
-#### Two-panel UI
-- **Top panel — Input:** drag & drop files *or folders*, or pick via the **Add** button. The queue shows filename, status (pending / processing / done / failed / skipped) and per-file progress.
-- **Bottom panel — Output:** the produced MP3s with their folder and size. Double-click a row to open the file; "Open folder" jumps to the output directory.
-- Drag & drop works on the **entire window**, not just the drop zone.
+#### Modern minimalist UI
+- **Two-panel workspace** with raised cards: left = **FILE QUEUE**
+  (name, size, status, per-file progress, color-coded states), right =
+  **CONVERTED MP3s** (name, folder, size). Double-click a row to open the file.
+- **Header** with logo + title, a compact **RU/EN pill switch**, and an
+  icon-only "check for updates" button.
+- Compact **icon action buttons** per card: `+ files`, `+ folder`, `clear`, `open folder`.
+- Large prominent **START (teal ▶) / STOP (red ■)** action bar.
+- **Compact settings panel** grouped into AUDIO / CONTROL / PATHS, clean checkboxes row.
+- **Thin overall progress bar** + **status bar** with a colored state icon
+  (idle / processing / done / error) and a version label.
+- Dark Material/macOS-inspired theme; thin modern scrollbars; empty-state prompt.
 
 #### Conversion
 - 🎯 **Any format** — OGG, WAV, FLAC, AAC, M4A, WMA, MP3, AC3, OPUS, AIFF, and dozens more (everything `ffmpeg` understands). Video containers (MP4/MKV/WebM/...) are handled too — only the audio stream is extracted.
 - 🏷️ **Tags &amp; metadata preserved** — artist, title, album, album art are carried over to the MP3 (`-map_metadata 0:s:0`).
 - 🎚️ **Bitrate selector** — 320 / 256 / 192 / 128 / 96 kbps.
+- 🎚️ **Channels** — mono / stereo selector (new in v1.1.2).
 - 🔊 **Optional loudness normalization** (`loudnorm`).
-- ⚡ **Keep source sample-rate/channels** option (or force 44.1 kHz / stereo).
+- ⚡ **Keep source sample-rate** option (or force 44.1 kHz).
 - ⏱️ **Real per-file progress** — the bar tracks actual encoding time via ffmpeg's `time=` output, not just file count.
 - 🛑 **Stop button** — cancels the running queue instantly (terminates the ffmpeg process).
 
@@ -96,20 +105,29 @@ Built with **Python + Tkinter + tkinterdnd2**, driving a bundled **ffmpeg/ffprob
 **EasyConvert** — крошечная самостоятельная программа для Windows, которая конвертирует **любое аудио в MP3**.
 Перетащи аудио-файл в окно (или на сам `.exe`) — и он станет MP3. И всё.
 
-### ✨ Возможности (v1.1)
+### ✨ Возможности (v1.1.2)
 
-#### Двухпанельный интерфейс
-- **Верхняя панель — Вход:** drag & drop файлов *или папок*, либо через кнопку **«Добавить»**. В очереди видно имя, статус (ожидание / конвертация / готово / ошибка / пропуск) и прогресс по каждому файлу.
-- **Нижняя панель — Выход:** готовые MP3 с папкой и размером. Двойной клик открывает файл, кнопка «Открыть папку» — папку вывода.
-- Перетаскивание работает на **всё окно**, а не только на drop-зону.
+#### Современный минималистичный UI
+- **Двухпанельное рабочее пространство** с карточками: слева **ОЧЕРЕДЬ ФАЙЛОВ**
+  (имя, размер, статус, прогресс по файлу, цветовые состояния), справа
+  **ГОТОВЫЕ MP3** (имя, папка, размер). Двойной клик открывает файл.
+- **Шапка** с логотипом и названием, компактный **RU/EN-переключатель** и
+  кнопка-иконка «проверить обновления».
+- Компактные **кнопки-иконки** в каждой карточке: `+ файлы`, `+ папка`, `очистить`, `открыть папку`.
+- Крупная заметная панель **СТАРТ (бирюзовый ▶) / СТОП (красный ■)**.
+- **Компактная панель настроек**, сгруппированная в АУДИО / УПРАВЛЕНИЕ / ПУТИ, чистая строка чекбоксов.
+- **Тонкая полоса общего прогресса** + **статус-бар** с цветной иконкой состояния
+  (ожидание / конвертация / готово / ошибка) и версией справа.
+- Тёмная тема в стиле Material/macOS; тонкие современные скроллбары; подсказка при пустой очереди.
 
 #### Конвертация
 - 🎯 **Любой формат** — OGG, WAV, FLAC, AAC, M4A, WMA, MP3, AC3, OPUS, AIFF и ещё десятки (всё, что понимает `ffmpeg`). Видеоконтейнеры (MP4/MKV/WebM/...) тоже поддерживаются — извлекается только аудиодорожка.
 - 🏷️ **Сохранение тегов и метаданных** — исполнитель, название, альбом, обложка переносятся в MP3 (`-map_metadata 0:s:0`).
 - 🎚️ **Выбор битрейта** — 320 / 256 / 192 / 128 / 96 kbps.
+- 🎚️ **Каналы** — выбор моно / стерео (новое в v1.1.2).
 - 🔊 **Нормализация громкости** (`loudnorm`) — опционально.
-- ⚡ **Сохранять частоту/каналы исходника** — опция (иначе 44.1 кГц / стерео).
-- ⏱️ **Честный прогресс по файлу** — полоса отслеживает реальное время кодирования через `time=` от ffmpeg, а не просто счётчик файлов.
+- ⚡ **Сохранять частоту исходника** — опция (иначе 44.1 кГц).
+- ⏱️ **Честный прогресс по файлу** — полоса отслеживает реальное время кодирования через `time=` от ffmpeg.
 - 🛑 **Кнопка «Стоп»** — мгновенно отменяет очередь (терминирует процесс ffmpeg).
 
 #### Вывод

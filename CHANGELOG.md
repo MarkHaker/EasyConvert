@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-07-22
+
+### Changed — UI redesign
+- Complete UI redesign: modern, minimalist, dark Material/macOS-inspired theme
+  (deep blue-grey `#1e1e2e`, soft purple `#bb86fc`, teal `#03dac6` for Start,
+  red `#cf6679` for Stop). Clean surfaces, thin separators, no "legacy Tk" look.
+- **Header**: logo glyph + app title on the left; compact **RU/EN pill switch**
+  and an icon-only "check for updates" button on the right (no more wide text buttons).
+- **Two-panel workspace** with raised cards: left = **FILE QUEUE**
+  (name, size, status, per-file progress), right = **CONVERTED MP3s**
+  (name, folder, size). Per-row status colors (pending/processing/done/failed/skipped).
+- Compact **icon action buttons** in each card header:
+  `+ files`, `+ folder`, `clear` (trash), `open folder`.
+- Large prominent **START (teal ▶) / STOP (red ■)** action bar in the middle.
+- **Compact settings panel** (no heavy frame) with grouped sections:
+  AUDIO (Bitrate, Channels), CONTROL (Workers), PATHS (Output folder, On clash)
+  + a folder-picker icon. Clean modern checkboxes row.
+- **Empty-state** prompt in the queue area when no files are loaded.
+- **Thin flat overall progress bar** + **status bar** with a colored state icon
+  (idle/processing/done/error) and version label on the right.
+- Thin modern scrollbars; mouse-wheel scrolling in the queue.
+
+### Added
+- **Channels** setting (1 = mono / 2 = stereo) — new audio parameter.
+- Per-file progress shown as a percentage in the queue row.
+- `--channels` CLI flag.
+- File size column in the input queue.
+
+### Fixed
+- Settings UI now reliably persists bitrate/channels/workers (references fixed).
+- Language switch now re-labels settings group titles and all UI strings instantly.
+
 ## [1.1] — 2026-07-22
 
 ### Added
