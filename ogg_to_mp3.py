@@ -2056,7 +2056,34 @@ def run_cli(files, settings):
     print(f"\nDone: {ok}/{total} — errors: {fail}, skipped: {skip}", flush=True)
 
 
+def _make_excepthook(crash_path):
+    def _hook(exc_type, exc_value, tb):
+        import traceback
+        try:
+            with open(crash_path, "w", encoding="utf-8") as f:
+                f.write("EasyConvert crash report\n")
+                f.write(f"Version: {APP_VERSION}\n")
+                f.write(f"Python: {sys.version}\n")
+                f.write(f"Platform: {sys.platform}\n")
+                f.write(f"Frozen: {is_frozen()}\n")
+                f.write("\n")
+                traceback.print_exception(exc_type, exc_value, tb, file=f)
+            # also print to stderr
+            traceback.print_exception(exc_type, exc_value, tb)
+        except Exception:
+            traceback.print_exception(exc_type, exc_value, tb)
+    return _hook
+
+
 def main():
+    # Crash log: write any unhandled exception to crash.log next to the exe
+    # so the user can send it to us when the windowed app dies silently.
+    crash_path = os.path.join(get_base_dir(), "crash.log")
+    try:
+        sys.excepthook = _make_excepthook(crash_path)
+    except Exception:
+        pass
+
     # CLI mode
     if len(sys.argv) >= 2 and sys.argv[1] == "--cli":
         s = load_settings()
@@ -2085,14 +2112,28 @@ def main():
             if os.path.exists(arg):
                 dropped.append(arg)
 
-    app = QApplication(sys.argv)
-    app.setApplicationName(APP_NAME)
-    # High-DPI: rely on default style; Fusion can conflict with our QSS on
-    # some Windows builds.
-    sys.exit(app.exec())
-    win = MainWindow(dropped_files=dropped if dropped else None)
-    win.show()
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        app.setApplicationName(APP_NAME)
+        # High-DPI: rely on default style; Fusion can conflict with our QSS on
+        # some Windows builds.
+        win = MainWindow(dropped_files=dropped if dropped else None)
+        win.show()
+        sys.exit(app.exec())
+    except Exception:
+        import traceback
+        try:
+            with open(crash_path, "w", encoding="utf-8") as f:
+                f.write("EasyConvert crash report (GUI startup)\n")
+                f.write(f"Version: {APP_VERSION}\n")
+                f.write(f"Python: {sys.version}\n")
+                f.write(f"Platform: {sys.platform}\n")
+                f.write(f"Frozen: {is_frozen()}\n")
+                f.write("\n")
+                traceback.print_exc(file=f)
+        except Exception:
+            traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
