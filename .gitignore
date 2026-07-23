@@ -15,7 +15,9 @@ ENV/
 
 # PyInstaller
 build/
+build_cli/
 dist/
+dist_cli/
 *.spec.bak
 *.spec.orig
 

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] — 2026-07-23
+
+### Fixed
+- **Critical:** the GUI never appeared — `app.exec()` was invoked before
+  `MainWindow` was created and shown (a regression introduced in v1.1.3 when
+  reorganizing `main()`). The windowed EXE therefore exited immediately with
+  no window. Fixed the ordering: build the window, `show()`, then enter the
+  event loop.
+- Added a `crash.log` writer (custom `sys.excepthook` + try/except around GUI
+  startup) so any future startup failure is recorded next to the EXE instead
+  of dying silently.
+
 ## [1.1.3] — 2026-07-23
 
 ### Changed — Complete UI rewrite on PyQt6
